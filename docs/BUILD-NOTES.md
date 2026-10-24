@@ -68,6 +68,10 @@ and we would rather ship a verified shortlist than a risky sender.
 
 ## The hardest cases we met
 
+- **A bug our own tests could not see.** A fix for ids leaking into the briefing text quietly emptied the briefing's picks, and the
+  tests stayed green because the fake model never made that mistake. We found it by running the real pipeline end to end after
+  every round of changes, which is now part of how we check: unit tests for the guards, a live run for the behaviour.
+
 - **A pasted job posting that is mostly boilerplate** (benefits, equal-opportunity text, fraud warnings). The Analyst now
   extracts only the role, groups a long tool list into a few criteria, and sets minimum years from "2-4 years".
 - **Model-invented evidence.** Handled by verbatim verification; a positive verdict with no verifiable quote is downgraded.
@@ -79,7 +83,7 @@ and we would rather ship a verified shortlist than a risky sender.
 
 ## How we tested it and know it works
 
-- **101 automated tests.** They use a fake model and fake network calls to pin down the guards: fabricated quotes, wrong
+- **133 automated tests.** They use a fake model and fake network calls to pin down the guards: fabricated quotes, wrong
   field, failed batches, a failed analyst, id leaks, the percentile math, budget logic, and the unchecked-signals rule.
 - **Live runs:** the full pipeline on demo data and on live Crustdata, including a real job posting and the Bengaluru brief.
 - **Replaying real output** through the verifier, which found the punctuation bug.
@@ -88,9 +92,10 @@ and we would rather ship a verified shortlist than a risky sender.
 
 ## What we left out to ship
 
-Outreach and sending, scheduling, ATS integration, accounts and a database (state is per-browser), the database-backed
-signals (open source, patents, citations; logic is built, no data source connected), and pay (its only data source was
-removed). Also cached search results: re-running a search spends credits again.
+Sending messages (the Outreach Writer drafts but never sends), scheduling, ATS integration, accounts and a database (state is
+per-browser), signals that need data we do not have (patents, citations, products with users, closed companies, difficult periods),
+and pay (its only data source was removed). Also an accuracy benchmark against known hires: the as-of replay is the groundwork, the
+benchmark itself is not built.
 
 ## What we would improve next, and why not now
 
@@ -98,8 +103,8 @@ removed). Also cached search results: re-running a search spends credits again.
   veteran" use today's size and stage rather than the size when the person worked there. Crustdata gave no funding-round dates.
 - **Watcher** so a shortlisted person's job change or new post pings the recruiter, which turns a one-off search into a standing one.
 - **Job Search** to show which companies are hiring this role now, as a warm signal.
-- **Evidence-citing outreach drafts, human approved.** The highest-value next step; held back for the sending-safety work above.
-- **Cache search results** by brief and date, so a re-run or retry costs nothing.
+- **Sending** the drafted message, with approval and a guarantee nobody is contacted twice. Drafting is built; sending needs consent and de-duplication work.
+- **A backtest**: a past opening, a known hire, everything after the hire date hidden (the as-of replay does this), and where the hire ranks among look-alikes.
 
 ## Crustdata: where it drives the outcome
 
@@ -118,15 +123,30 @@ removed). Also cached search results: re-running a search spends credits again.
 - **A workflow Crustdata could offer:** "evidence-verified sourcing", people search returned with the quotable text behind
   each match, so downstream agents can cite sources instead of asserting them.
 
+## What we fixed after scoring ourselves against the judging criteria
+
+We marked ourselves down on five things and fixed them in this order, one commit each:
+
+| Gap we found | Fix | How we know |
+|---|---|---|
+| A re-run re-spent about 150 credits; nothing showed what a search cost | 24-hour on-disk result cache, in-flight sharing, a Refresh button, the live credit balance in the header and the measured cost of every search | Against the running server: cold run, cache hit, forced refresh, cache hit again. Credits: 13,694 left of 15,000 after the whole build |
+| Results went stale without warning | A banner when results are over a day old, and "served from cache" labelling | Seen in the browser on a 3-day-old result |
+| The product stopped at a shortlist | An Outreach Writer agent that drafts the first message from verified evidence and never sends | Run live: a 112-word message that quoted the candidate exactly. Reading it found a paraphrase the quote guard cannot catch ("a role where you would own a lot"), so the prompt now forbids describing the role |
+| "Facts correct for the date they are used" | An as-of replay that hides later jobs and undated self-written text | On a real result, top scores of 100/100/99/97 became 1 to 5 as of 2021-01 and the order changed |
+| Docs contradicted themselves (101 vs 82 tests; real count 118) | Numbers corrected, now 133 | `npm test` |
+| **A bug we introduced earlier, found only by re-running the real pipeline:** the briefing came back with no picks | Prompt said "never write ids" but each pick needs one. Prompt fixed, a pick that names the person still resolves, cache version bumped | Live: 5 picks on the real Bengaluru result. The earlier unit tests used a fake model that always returned valid ids, which is why they passed |
+
+What is still open: no accuracy benchmark, Job Search, Watcher and Web Search unused, and the first commit is a large dump.
+
 ## Self-assessment against the judging criteria
 
 | Criterion | Where we are | Biggest gap |
 |---|---|---|
-| Customer value | A real brief in, a justified shortlist out, in under a minute, every pick with quotes and sources | It stops at the shortlist: no outreach, so a person still has to write the first message |
-| Feasibility and scalability | Works live on briefs beyond the prepared one; failures are visible; 82 tests | Re-running re-spends credits; search returns no per-profile freshness date, so we show the retrieval time |
-| Idea and innovation | Scores only what can be quoted, and surfaces people outside the usual pool | The agents help a recruiter more than they replace one |
-| Crustdata expansion | Person search, company search, Person Enrich and Company Enrich drive the result, and the social-post review is built | Job Search, Watcher and the MCP server are unused |
-| Understanding and demo | This document | Needs a rehearsed five-minute run, including a failure case |
+| Customer value | A brief in, a justified shortlist out in under a minute, every pick with quotes and sources, and a checked first-message draft | A person still sends it; no contact route |
+| Feasibility and scalability | Works live on briefs beyond the prepared one; failures are visible; retries are free from the cache; as-of replay; 133 tests | No measured accuracy; one process, per-browser state, no queue |
+| Idea and innovation | Scores only what can be quoted, surfaces people outside the usual pool, and drafts messages that cannot cite what is not there | The agents still help a recruiter more than they replace one |
+| Crustdata expansion | Person and company search, both enrich calls, dev-platform profiles and social posts drive the result | Job Search, Watcher, Web Search and the MCP server are unused |
+| Understanding and demo | This document, the architecture diagrams, the dry run | A rehearsed five-minute run and the Loom |
 
 ## Suggested five-minute demo
 

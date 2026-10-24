@@ -23,7 +23,9 @@ config:
 ---
 flowchart TD
     brief(["Recruiter's brief: a sentence or a full job posting"]) --> api["POST /api/discovery, streams progress to the browser"]
-    api --> a1
+    api --> cache{{"24-hour cache: an identical search finished recently?"}}:::guard
+    cache -->|yes: stored result, 0 credits| result
+    cache -->|no, or Refresh pressed| a1
 
     a1["<b>1 · Brief Analyst</b> (Anthropic)<br/>brief → criteria and search terms<br/>runs only if the brief text changed"]:::agent
     a1 --> a2["<b>2 · Search Strategist</b> (Anthropic)<br/>adjacent job titles and evidence phrases, live mode only"]:::agent
@@ -33,7 +35,7 @@ flowchart TD
     a3 --> g1{{"Quote guard: is the quote verbatim in that profile field?"}}:::guard
     g1 --> a4["<b>6 · Briefing Writer</b> (Anthropic)<br/>top 8 candidates → five picks and caveats"]:::agent
     a4 --> g2{{"Quote and id guard: quotes verbatim, internal ids replaced by names"}}:::guard
-    g2 --> result["Result returned once: candidates, companies, AI evidence, briefing, warnings, the criteria used"]
+    g2 --> result["Result returned once: candidates, companies, AI evidence, briefing, warnings, the criteria used<br/>(stored in the cache for 24 hours)"]
 
     result --> score["<b>Evidence engine</b> in the browser, no model<br/>relevance 0 to 100 from quoted text only"]:::engine
     result --> sig["<b>Signals</b> in the browser, no model<br/>startup veteran, open source, promotions, rehires, lean teams"]:::engine
@@ -141,6 +143,7 @@ than counted as zero.
 | **Search Strategist** | Adjacent titles and evidence phrases that widen the search | same, low | Two short lists | Once, live mode | Lists cleaned and capped |
 | **Evidence Reviewer** | Finds proof a keyword missed, for criteria still unsupported | same, medium (`ANTHROPIC_REVIEW_MODEL` can swap in a cheaper model) | Findings: criterion, field, quote | Parallel batches of 5, four at a time, up to 40 people | **Quote must appear verbatim in that field**; unknown criteria, wrong fields and duplicates are dropped |
 | **Briefing Writer** | Summarises the top candidates, flags people outside the usual pool | same, low | Headline, five picks, caveats | Once | Picks must name real candidates; quoted text must be verbatim; internal ids are replaced by names |
+| **Outreach Writer** | Drafts the first message to a candidate, opening with their real work | same, low | One short message | **On demand only**, one person | Evidence quotes re-checked; **quoted words must be verbatim in the profile**; 40 to 130 words; keeps `[your name]`; one retry with the reason, then a clear error. Never sends |
 | **Content Reviewer** | Judges whether recent LinkedIn posts show real technical work | same, medium | Verdict, summary, quotes | **On demand only**, one person (0.5 Crustdata credits per post) | Quotes verified; a positive verdict with no verifiable quote is downgraded to "insufficient"; fewer than 3 posts skips the model |
 
 All agent calls go through one interface (`Llm` in [`src/lib/ai/types.ts`](../src/lib/ai/types.ts)), so the whole pipeline is
@@ -152,7 +155,7 @@ tested against a fake model with no spend.
 |---|---|
 | Projects, shortlist, notes, budget, saved content checks | Browser `localStorage` (a `ProjectStore` interface allows a database later) |
 | API keys | Server environment only, never sent to the browser |
-| The result of a search | Returned once to the browser and stored with the project; the server keeps no state |
+| The result of a search | Returned to the browser and stored with the project; the server also keeps finished searches in a git-ignored folder for 24 hours so a retry costs nothing |
 | Scoring and signals | Computed in the browser from the returned evidence, so changing a criterion re-ranks instantly |
 
 ## Keeping this diagram honest

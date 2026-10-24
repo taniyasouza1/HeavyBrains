@@ -42,13 +42,18 @@ Start to finish, without a person:
 9. **Has the budget machinery ready.** Pay ranges per person, a budget per hire, fits / stretch / over marking, filters,
    a Pay tab and a shortlist cost summary are built. **No salary data source is connected right now**, so none of this
    shows until one is (see below).
-10. **Supports the decision:** interactive candidate card, shortlist with notes and follow-ups, budget summary, CSV export,
-   saved projects.
+10. **Drafts the first message** for any candidate with an Outreach Writer agent. It opens with their real work, quotes
+    them exactly (checked against the profile), and **never sends anything**; a person edits and sends.
+11. **Stays honest about cost and age.** The header shows your Crustdata credits and each search records what it cost
+    (about 150 live). An identical search within 24 hours is served from a cache for free, a banner warns when results are
+    over a day old, and an **as-of date** replays everyone using only what was knowable then.
+12. **Supports the decision:** interactive candidate card, shortlist with notes and follow-ups, budget summary, CSV export,
+    saved projects.
 
 **Where it still needs a person:**
 
 - Judging the evidence. Profile text is self-reported; scale, ownership and quality have to be confirmed in a conversation.
-- Deciding who to contact. There is **no outreach, scheduling or ATS integration**; the output is a vetted shortlist.
+- Deciding who to contact and sending the message. The app drafts but **never sends**, and has no scheduling or ATS integration.
 - Setting the brief, tuning criteria, and naming your usual and competitor companies.
 - Pay, once a source is connected, is a **market estimate for the role and place, not what the person earns**, and needs a human conversation.
 - Anything not on a public profile: motivation, availability, culture fit, references.
@@ -59,7 +64,9 @@ Start to finish, without a person:
 |---|---|
 | Brief Analyst, Search Strategist, Evidence Reviewers, Briefing Writer | Run live against Anthropic and Crustdata (including a full job posting) |
 | Crustdata Person Enrich and Company Enrich | Run live: 10 people and 39 employers enriched in a 51-second search |
-| Evidence engine, quote verification, blind spots, signals, enrich merging, pay logic | Covered by 101 automated tests, using a fake model and fake network calls |
+| Evidence engine, quote verification, blind spots, signals, enrich merging, cache, as-of replay, outreach guards, pay logic | Covered by 133 automated tests, using a fake model and fake network calls |
+| Outreach Writer | Run live on a real candidate: 112 words, opens with their real work, quote checked, placeholders kept. Not yet run across many candidates |
+| 24-hour result cache, credits display, as-of replay | Verified against the running app (cold run, hit, forced refresh; credit balance; 100/100/99/97 top scores become 1 to 5 as of 2021-01) |
 | Pay estimates and budget | Logic, UI and tests are built, but **no salary data source is connected**, so it is dormant |
 | Post-quality review (Crustdata Social Post API) | Run live on 5 candidates: 1 judged (9 posts, quotes verified), 4 had 0 to 2 posts and correctly came back "insufficient" at no cost. About 5 credits for the one judged person |
 | Open-source impact (GitHub) | Run live: 7 of the top 10 candidates had a Crustdata-matched GitHub account; merged PRs and repo stars fetched for all 7 (stars × merged PRs per repo) |
@@ -72,7 +79,8 @@ Start to finish, without a person:
 - **A salary source for the pay feature:** the first candidate is public H-1B wage filings loaded into a table, which gives
   company-specific wages for US employers. Any source that returns a salary histogram per role and country plugs into
   `src/lib/pay/server.ts`.
-- **Outreach drafts** that cite the evidence, sent only after a person approves.
+- **Sending** the drafted message (with approval, de-duplication so nobody is contacted twice, and unsubscribe handling). Drafting exists; sending is held back on purpose.
+- **A real accuracy benchmark.** The as-of replay is the groundwork: take a past opening with a known hire, hide everything after the hire date, and report where the hire ranks among look-alikes. We have not built or run this yet, so we cannot claim a hit rate.
 - **Calibration from outcomes:** tune weights against who was interviewed and hired, with every change visible.
 - **Team use:** a real database instead of per-browser storage, accounts, shared projects, ATS sync.
 
@@ -108,7 +116,7 @@ Run it in **demo mode** with no keys at all: choose **DEMO DATA** in the header.
 The header always shows `LIVE DATA` or `DEMO DATA` and `AI AGENTS ON/OFF`; there is no silent fallback between them.
 
 ```bash
-npm test            # 101 tests
+npm test            # 133 tests
 npm run typecheck
 npm run lint
 npm run build && npm start
@@ -186,6 +194,11 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
 
 **What didn't, or needed changing**
 
+- **The briefing's five picks were silently empty for a while, and our tests did not notice.** Fixing an id leaking into text, we told
+  the model never to write internal ids, but each pick has a field that must contain an id. It obeyed, every pick was discarded,
+  and a headline appeared with no picks. Unit tests passed because the fake model always sent valid ids. A live regression run
+  (`picks 0`) caught it. Fix: ids are forbidden in prose only, a pick that names the person still resolves, and the cache
+  version was bumped so the broken results were not reused.
 - **The "startup veteran" metric needed three rounds of fixes, each found only on real data.** The first version summed
   overlapping roles (6.9 years at one company), credited one-person "companies" and unfunded shells, and then, once
   tightened, wrongly excluded real startups that LinkedIn labels "Self-Employed". Unit tests passed every time. Scoring a
@@ -222,5 +235,7 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
 - "Startup veteran" uses a company's funding stage and team size **today**; Crustdata returned no funding-round dates, so it shows time at a
   lean seed-stage company, not proof they joined before its first round.
 - Reviews are capped at 40 candidates per search to bound cost.
+- **There is no measured accuracy yet.** We test that the guards work and that live runs return sensible people, but we have not benchmarked the ranking against known hires.
+- A drafted message can still paraphrase loosely. Quotation marks are verified; paraphrase is not, so a person must read it.
 - The post review judges technical substance in posts, so a founder who posts about their product reads as "promotional" (it earns no points, but is not a penalty). Most engineers post too little to judge.
 - The unverified items in the status table above.
