@@ -33,7 +33,7 @@ function FreshnessNote({ retrievedAt, fromCache, onRefresh, busy }: { retrievedA
 }
 
 export function DiscoverView() {
-  const { project, hydrated, run, runDiscovery } = useApp();
+  const { project, hydrated, run, runDiscovery, update } = useApp();
   const [editing, setEditing] = useState<boolean | null>(null);
   const findNext = useRef(false);
 
@@ -81,6 +81,23 @@ export function DiscoverView() {
             {criteria.criteria.map((c) => <li key={c.id}><Chip tone={TONE[c.tier]}>{c.label}</Chip></li>)}
             {criteria.location && <li><Chip>{criteria.location}</Chip></li>}
           </ul>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+            <label className="flex items-center gap-2">
+              Judge as of
+              <input
+                type="date" aria-label="Judge candidates as of this date" value={project.asOf ?? ""} max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => update((p) => ({ ...p, asOf: e.target.value || undefined }))}
+                className="rounded-md border border-line bg-panel2 px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
+              />
+            </label>
+            {project.asOf && <Button size="sm" variant="ghost" onClick={() => update((p) => ({ ...p, asOf: undefined }))}>Back to today</Button>}
+          </div>
+          {project.asOf && (
+            <p role="status" className="mt-2 rounded-md border border-warn/30 bg-warn/10 p-2 text-xs text-warn">
+              Replaying as of {project.asOf}: jobs that started later are hidden, roles that ended later count as current, and self-written text (headline, summary, skills),
+              AI-found evidence and outside signals are left out, because nothing says when they were written. Company size and stage are still as of today.
+            </p>
+          )}
           {project.result?.creditsUsed != null && (
             <p className="mt-2 text-xs text-muted">{project.result.creditsUsed === 0 ? "This search cost no credits." : `This search used about ${Math.round(project.result.creditsUsed)} Crustdata credits.`}</p>
           )}

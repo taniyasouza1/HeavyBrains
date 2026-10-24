@@ -282,6 +282,8 @@ export interface SourcingProject {
   mode: DataMode;
   /** Whether AI agents run on discovery. Unset means "on when a key is configured". */
   ai?: boolean;
+  /** Judge everyone as of this date (YYYY-MM-DD), using only what was knowable then. */
+  asOf?: string;
   /** The brief text the current criteria were derived from, so edits to it trigger re-analysis. */
   briefAnalyzed?: string;
   result?: DiscoveryResult;

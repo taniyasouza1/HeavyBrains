@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type {
   Candidate, CandidateMatch, CandidateState, Company, DataMode, DiscoveryResult, PoolView, SourcingProject,
 } from "@/types";
+import { asOfCandidate } from "@/lib/discovery/asof";
 import { analyzePool } from "@/lib/discovery/analysis";
 import { parseRoleDescription } from "@/lib/discovery/criteria";
 import { emptyCandidateState, localStorageStore, newProject } from "@/lib/persistence/store";
@@ -159,13 +160,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [activeId]);
 
   const result = project?.result;
+  // In as-of mode every person is replayed as they could have been judged on that date. AI evidence and outside data
+  // are tied to today's profile, so they are left out of a replay.
+  const asOf = project?.asOf;
+  const viewCandidates = useMemo(() => (result ? (asOf ? result.candidates.map((c) => asOfCandidate(c, asOf)) : result.candidates) : []), [result, asOf]);
   const matches = useMemo(() => {
     if (!project || !result) return [];
     // Saved content checks join whatever external data the search returned, so they count in each person's Signals score.
     const external = { ...result.external };
     for (const [id, content] of Object.entries(project.contentChecks ?? {})) external[id] = { ...external[id], content };
-    return analyzePool({ ...result, external }, project.criteria, project.preferences);
-  }, [project?.criteria, project?.preferences, project?.contentChecks, result]); // eslint-disable-line react-hooks/exhaustive-deps
+    return analyzePool(asOf ? { ...result, candidates: viewCandidates, aiEvidence: undefined, external: undefined } : { ...result, external }, project.criteria, project.preferences);
+  }, [project?.criteria, project?.preferences, project?.contentChecks, result, asOf, viewCandidates]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track rank movement caused by criteria/preference edits so changed ordering is explainable.
   useEffect(() => {
@@ -187,7 +192,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     prevRanks.current = { key, ranks };
   }, [matches]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const candidates = useMemo(() => new Map((result?.candidates ?? []).map((c) => [c.id, c])), [result]);
+  const candidates = useMemo(() => new Map(viewCandidates.map((c) => [c.id, c])), [viewCandidates]);
   const companies = useMemo(() => new Map((result?.companies ?? []).map((c) => [c.id, c])), [result]);
   const byName = useMemo(() => new Map((result?.companies ?? []).map((c) => [normalizeName(c.name), c])), [result]);
   const companyByName = useCallback((n: string) => byName.get(normalizeName(n)), [byName]);
