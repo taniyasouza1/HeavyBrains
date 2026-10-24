@@ -54,7 +54,7 @@ export function promotionsOf(c: Candidate): Promotion[] {
     for (let i = 1; i < list.length; i++) {
       const a = list[i - 1], b = list[i];
       const s0 = monthIndex(a.startDate), s1 = monthIndex(b.startDate);
-      if (s0 == null || s1 == null || titleRank(b.title) <= titleRank(a.title)) continue;
+      if (s0 == null || s1 == null || s1 <= s0 || titleRank(b.title) <= titleRank(a.title)) continue; // concurrent titles are not a promotion
       out.push({ company: b.company, from: a.title ?? "Role", to: b.title ?? "Role", months: s1 - s0, at: b.startDate! });
     }
   return out;
@@ -88,18 +88,32 @@ function fastPromotion(c: Candidate): SignalResult {
     "Inferred from job titles at the same company; titles are self-reported.");
 }
 
+const yearsLabel = (months: number) => {
+  const y = Math.round((months / 12) * 10) / 10;
+  return `${y} ${y === 1 ? "year" : "years"}`;
+};
+
 function leanTeam(c: Candidate, companies: Company[]): SignalResult {
   const byName = new Map(companies.map((x) => [normalizeName(x.name), x]));
-  const ev: string[] = [];
-  let best = 0;
+  const now = new Date().getFullYear() * 12 + new Date().getMonth();
+  const per = new Map<string, { name: string; heads: number; spans: [number, number][] }>();
   for (const e of c.employment) {
     const s = monthIndex(e.startDate);
-    const end = monthIndex(e.endDate) ?? (e.current ? new Date().getFullYear() * 12 + new Date().getMonth() : undefined);
+    const end = monthIndex(e.endDate) ?? (e.current ? now : undefined);
     const heads = e.companyHeadcount ?? byName.get(normalizeName(e.company))?.headcount;
-    if (s == null || end == null || end - s < 12 || heads == null) continue;
-    const v = heads <= 200 ? 1 : heads <= 500 ? 0.5 : 0;
-    if (v) ev.push(`${Math.round((end - s) / 12 * 10) / 10} years at ${e.company} (about ${fmt(heads)} employees today).`);
-    best = Math.max(best, v);
+    if (s == null || end == null || heads == null || heads > 500) continue;
+    const key = normalizeName(e.company);
+    const cur = per.get(key) ?? { name: e.company, heads, spans: [] };
+    cur.spans.push([s, end]);
+    per.set(key, cur);
+  }
+  const ev: string[] = [];
+  let best = 0;
+  for (const { name, heads, spans } of per.values()) {
+    const months = unionMonths(spans); // overlapping roles at one company count once
+    if (months < 12) continue;
+    ev.push(`${yearsLabel(months)} at ${name} (about ${fmt(heads)} employees today).`);
+    best = Math.max(best, heads <= 200 ? 1 : 0.5);
   }
   return mk("lean_team", "profile", best, ev, "Headcount is the company's size today, not when this person worked there.");
 }
@@ -110,10 +124,13 @@ function earlyStage(c: Candidate, companies: Company[]): SignalResult {
   const byName = new Map(companies.map((x) => [normalizeName(x.name), x]));
   let checked = false, best = 0;
   const ev: string[] = [];
-  for (const e of c.employment) {
+  const seen = new Set<string>();
+  // Earliest role first, so a company is judged by when they first joined it, and listed once.
+  for (const e of [...c.employment].sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""))) {
     const co = (e.companyId ? byId.get(`cd-${e.companyId}`) : undefined) ?? byName.get(normalizeName(e.company));
     const joined = Number(e.startDate?.slice(0, 4));
-    if (!co?.yearFounded || !joined) continue;
+    if (!co?.yearFounded || !joined || seen.has(co.id)) continue;
+    seen.add(co.id);
     checked = true;
     const age = joined - co.yearFounded;
     if (age < 0) continue; // a start date before the founding year is a data error, not evidence
@@ -179,9 +196,8 @@ function startupVeteran(c: Candidate, companies: Company[]): SignalResult {
     const months = unionMonths(spans);
     if (months < 12) continue; // at least a year at the company
     all.push(...spans);
-    const yrs = Math.round((months / 12) * 10) / 10;
     const team = co.engineers != null ? `${co.engineers} engineer${co.engineers === 1 ? "" : "s"}` : `${co.headcount} people`;
-    ev.push(`${yrs} years at ${co.name}: ${co.funding?.lastRound ? co.funding.lastRound.replace(/_/g, " ") : "unfunded"} stage, ${team}.`);
+    ev.push(`${yearsLabel(months)} at ${co.name}: ${co.funding?.lastRound ? co.funding.lastRound.replace(/_/g, " ") : "unfunded"} stage, ${team}.`);
   }
   const years = unionMonths(all) / 12;
   return mk("startup_veteran", "profile", years >= 4 ? 1 : years >= 2 ? 0.7 : years >= 1 ? 0.4 : 0, ev,
@@ -198,13 +214,16 @@ function competitor(c: Candidate, prefs: RecruiterPreferences): SignalResult {
 /* ----------------------------------------- from external data (your database) */
 
 function openSource(x?: ExternalSignals): SignalResult {
-  if (!x?.openSource) return unchecked("open_source", "database", "No open-source data for this person.");
+  if (!x?.openSource) return unchecked("open_source", "github", "No matched GitHub account for this person, or no GitHub token is configured.");
   // Per repo: stars x merged pull requests. Summed, then log-scaled so one huge project does not drown everything (10^5 = full marks).
   const rows = x.openSource.repos.map((r) => ({ ...r, value: r.stars * r.mergedPrs })).filter((r) => r.value > 0).sort((a, b) => b.value - a.value);
   const total = rows.reduce((a, r) => a + r.value, 0);
-  return mk("open_source", "database", Math.log10(1 + total) / 5,
+  return mk("open_source", "github", Math.log10(1 + total) / 5,
     rows.slice(0, 3).map((r) => `${r.name}: ${fmt(r.stars)} stars × ${fmt(r.mergedPrs)} merged PRs = ${fmt(r.value)}`),
-    total ? `Combined score ${fmt(total)} (stars × merged PRs, summed over repos).` : undefined);
+    [
+      total ? `Combined score ${fmt(total)} (stars × merged PRs, summed over repos).` : "",
+      x.openSource.account ? (x.openSource.account.declaresLinkedIn ? `GitHub account ${x.openSource.account.username}, confirmed: its profile links to this LinkedIn profile.` : `GitHub account ${x.openSource.account.username}, matched by name only: its profile does not link to this LinkedIn profile, so confirm it is them.`) : "",
+    ].filter(Boolean).join(" ") || undefined);
 }
 
 function patents(x?: ExternalSignals): SignalResult {

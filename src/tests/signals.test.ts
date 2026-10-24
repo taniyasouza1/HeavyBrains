@@ -43,6 +43,25 @@ describe("fast promotion", () => {
   });
 });
 
+describe("evidence quality on real-data patterns", () => {
+  it("does not call two simultaneous titles at one company a promotion", () => {
+    const p = person([job("Volume", "Co-Founder", "2020-07", "2025-02"), job("Volume", "CTO", "2020-07", "2022-10")]);
+    expect(get(computeSignals(p, none, prefs), "fast_promotion").status).toBe("none");
+  });
+  it("lists a company once and merges its overlapping roles, with correct singular years", () => {
+    const small = { id: "cd-1", name: "Tiny Co", headcount: 20, source: "crustdata" as const };
+    const p = person([job("Tiny Co", "Engineer", "2020-01", "2021-01", { companyId: "1" }), job("Tiny Co", "Lead", "2020-06", "2021-01", { companyId: "1" })]);
+    const r = get(computeSignals(p, [small], prefs), "lean_team");
+    expect(r.evidence).toEqual(["1 year at Tiny Co (about 20 employees today)."]);
+  });
+  it("lists early-stage joins once per company", () => {
+    const p = person([at("1", "Young", "Engineer", "2019-01", "2020-01"), at("1", "Young", "Lead", "2020-01", "2021-06")]);
+    const r = get(computeSignals(p, [co("1", "Young", { yearFounded: 2018 })], prefs), "early_stage");
+    expect(r.evidence).toHaveLength(1);
+    expect(r.evidence[0]).toMatch(/Joined Young in 2019/);
+  });
+});
+
 describe("lean team", () => {
   it("needs a year of tenure and a known small headcount", () => {
     const small = computeSignals(person([job("Tiny Co", "Engineer", "2018-01", "2020-01", { companyHeadcount: 60 })]), none, prefs);

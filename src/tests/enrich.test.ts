@@ -52,6 +52,8 @@ describe("merging enriched data", () => {
     const base: Candidate = { id: "a", name: "A", skills: ["Go"], employment: [], source: "crustdata" };
     const m = mergeCandidate(base, { ...base, summary: "S", skills: ["Go", "Rust"], education: [{ school: "X" }], sourceTimestamp: "2026-01-01" });
     expect(m).toMatchObject({ summary: "S", skills: ["Go", "Rust"], education: [{ school: "X" }], sourceTimestamp: "2026-01-01" });
+    const gh = { url: "https://github.com/x", username: "x", confidence: 1, declaresLinkedIn: true };
+    expect(mergeCandidate(base, { ...base, github: gh }).github).toEqual(gh);
   });
 });
 
@@ -83,6 +85,18 @@ describe("enrich stage", () => {
     expect(res.enriched).toEqual({ people: 3, companies: 3 });
     expect(res.candidates.every((c) => c.summary === "Enriched summary")).toBe(true);
     expect(res.companies.some((c) => c.yearFounded === 2020)).toBe(true);
+  });
+  it("fetches GitHub activity only for people with a matched account, and a failure only warns", async () => {
+    const enrichedPeople: Candidate[] = people.map((p, i) => ({ ...p, github: i < 2 ? { url: `https://github.com/u${i}`, username: `u${i}`, confidence: 1, declaresLinkedIn: true } : undefined }));
+    const asked: string[] = [];
+    const res = await run({
+      people: async (urls) => new Map(urls.map((u, i) => [u, enrichedPeople[i]])),
+      companies: async () => [],
+      github: async (u) => { asked.push(u); if (u === "u1") throw new Error("GitHub rate limit reached"); return [{ name: "a/b", stars: 10, mergedPrs: 2 }]; },
+    });
+    expect(asked.sort()).toEqual(["u0", "u1"]);
+    expect(Object.keys(res.external ?? {})).toHaveLength(1);
+    expect(res.warnings.join(" ")).toMatch(/GitHub lookup failed for 1/);
   });
   it("keeps the search results and warns when enrichment fails", async () => {
     const res = await run({ people: async () => { throw new Error("403"); }, companies: async () => [] });

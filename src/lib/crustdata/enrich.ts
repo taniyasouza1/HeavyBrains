@@ -3,7 +3,8 @@ import type { Candidate, Company } from "@/types";
 import { crustdataPost, CrustdataError } from "./client";
 import { normalizeCompany, normalizePerson } from "./normalize";
 
-const PERSON_ENRICH_FIELDS = ["basic_profile.summary", "experience", "education", "skills"];
+// dev_platform_profiles adds about 1 credit per person and gives a GitHub account matched to the LinkedIn profile.
+const PERSON_ENRICH_FIELDS = ["basic_profile.summary", "experience", "education", "skills", "dev_platform_profiles"];
 const COMPANY_ENRICH_FIELDS = ["basic_info", "headcount", "funding"];
 const PERSON_BATCH = 25; // documented maximum per request
 // Verified live: Company Enrich answers 500 for 10 ids at once and 200 for 5 or fewer.

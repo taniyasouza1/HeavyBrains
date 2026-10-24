@@ -1,4 +1,5 @@
 import type { Candidate, Company, Employment } from "@/types";
+import { normalizeName } from "@/lib/utils/text";
 import { RawCompanySchema, RawPersonSchema, type RawPerson } from "./schemas";
 
 const clean = (s: string | null | undefined): string | undefined => {
@@ -35,6 +36,23 @@ function normalizeEmployment(raw: NonNullable<RawPerson["experience"]>, current:
   });
 }
 
+const MIN_GITHUB_CONFIDENCE = 0.9;
+const vanity = (url?: string | null) => url?.toLowerCase().replace(/^https?:\/\/(www\.)?/, "").replace(/[?#].*$/, "").replace(/\/$/, "");
+
+/**
+ * Picks a GitHub account for this person only when Crustdata matched it with high confidence AND either the GitHub profile
+ * declares this person's LinkedIn URL or the names agree. Anything weaker is dropped: crediting someone with a stranger's code is worse than no credit.
+ */
+export function pickGithub(profiles: NonNullable<RawPerson["dev_platform_profiles"]>, name: string, linkedinUrl?: string): Candidate["github"] {
+  const best = [...profiles].filter((p) => p.profile_url && /github\.com\/[A-Za-z0-9-]+\/?$/.test(p.profile_url)).sort((a, b) => (b.confidence_score ?? 0) - (a.confidence_score ?? 0))[0];
+  if (!best?.profile_url || (best.confidence_score ?? 0) < MIN_GITHUB_CONFIDENCE) return undefined;
+  const declaresLinkedIn = !!linkedinUrl && (best.declared_handles ?? []).some((h) => h.provider?.toLowerCase() === "linkedin" && vanity(h.url) === vanity(linkedinUrl));
+  const sameName = !!best.name && normalizeName(best.name) === normalizeName(name);
+  if (!declaresLinkedIn && !sameName) return undefined;
+  const username = best.profile_url.replace(/\/$/, "").split("/").pop()!;
+  return { url: best.profile_url, username, confidence: best.confidence_score ?? 0, declaresLinkedIn, totalStars: best.total_stars ?? undefined };
+}
+
 export function normalizePerson(input: unknown): Candidate | null {
   const parsed = RawPersonSchema.safeParse(input);
   if (!parsed.success) return null;
@@ -65,6 +83,7 @@ export function normalizePerson(input: unknown): Candidate | null {
       const school = clean(s.school);
       return school ? [{ school, degree: clean(s.degree), field: clean(s.field_of_study), startYear: s.start_year ?? undefined, endYear: s.end_year ?? undefined }] : [];
     }),
+    github: p.dev_platform_profiles?.length ? pickGithub(p.dev_platform_profiles, name, profileUrl) : undefined,
     yearsExperience: p.experience?.years_of_experience_raw ?? undefined,
     sourceTimestamp: clean(p.updated_at) ?? clean(p.basic_profile?.last_updated),
     source: "crustdata",

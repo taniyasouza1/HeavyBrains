@@ -38,7 +38,11 @@ export interface ContentCheck {
 
 export interface ExternalSignals {
   content?: ContentCheck;
-  openSource?: { repos: { name: string; stars: number; mergedPrs: number }[] };
+  openSource?: {
+    repos: { name: string; stars: number; mergedPrs: number }[];
+    /** Which GitHub account this came from, and whether the GitHub profile itself confirms it is this person. */
+    account?: { username: string; declaresLinkedIn: boolean };
+  };
   patents?: { count: number; citedByPapers: number };
   papers?: { citations: number };
   productWithUsers?: { name: string; users?: number };
@@ -66,7 +70,7 @@ export interface SignalResult {
   earned: number;
   max: number;
   evidence: string[];
-  source: "profile" | "database" | "recruiter" | "posts";
+  source: "profile" | "database" | "recruiter" | "posts" | "github";
   note?: string;
 }
 
@@ -140,6 +144,8 @@ export interface Candidate {
   summary?: string;
   skills: string[];
   employment: Employment[];
+  /** A GitHub account Crustdata matched to this person with high confidence. Never guessed from a name. */
+  github?: { url: string; username: string; confidence: number; /** The GitHub profile itself declares this LinkedIn URL. */ declaresLinkedIn: boolean; totalStars?: number };
   education?: { school: string; degree?: string; field?: string; startYear?: number; endYear?: number }[];
   yearsExperience?: number;
   /** Provider freshness timestamp, if the source supplied one. */

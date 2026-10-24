@@ -8,6 +8,7 @@ import { dedupeCandidates } from "./ranking";
 import { normalizeName } from "@/lib/utils/text";
 import { analyzePool } from "./analysis";
 import { estimatePay, type HistogramFetcher } from "@/lib/pay/estimate";
+import type { RepoContribution } from "@/lib/github/contributions";
 import { analyzeBrief, planSearch, reviewCandidates, writeBriefing, type SearchPlan } from "@/lib/ai/agents";
 import { AgentError, type Llm } from "@/lib/ai/types";
 
@@ -24,6 +25,8 @@ export interface DiscoveryRequest {
 export interface EnrichRun {
   people(profileUrls: string[]): Promise<Map<string, Candidate>>;
   companies(companyIds: string[]): Promise<Company[]>;
+  /** Merged PRs by repo for a GitHub username. Optional: only present when a GitHub token is configured. */
+  github?(username: string): Promise<RepoContribution[]>;
 }
 
 /** Set when salary estimates are wanted. The fetchers are injected so tests can run without keys. */
@@ -280,6 +283,7 @@ export function mergeCandidate(base: Candidate, e: Candidate): Candidate {
     summary: base.summary ?? e.summary,
     skills: [...new Set([...base.skills, ...e.skills])],
     education: e.education?.length ? e.education : base.education,
+    github: e.github ?? base.github,
     employment: mergeEmployment(base.employment, e.employment),
     sourceTimestamp: e.sourceTimestamp ?? base.sourceTimestamp,
   };
@@ -321,6 +325,30 @@ async function enrichTop(result: DiscoveryResult, criteria: RoleCriteria, prefs:
       result.companies = [...byId.values()];
     } catch (e) {
       result.warnings.push(`Company Enrich failed (${e instanceof CrustdataError ? e.message : "unknown error"}). Employers keep their search-level profiles.`);
+    }
+  }
+
+  // Open-source impact: only for people whose GitHub account Crustdata matched with confidence (see pickGithub).
+  if (enrich.github) {
+    const withGithub = result.candidates.filter((c) => ids.has(c.id) && c.github);
+    if (withGithub.length) {
+      emit({ stage: "GitHub", detail: `Merged pull requests and repo stars for ${withGithub.length} candidates with a matched account` });
+      let failed = 0, firstError = "";
+      const external = { ...result.external };
+      let next = 0;
+      await Promise.all(Array.from({ length: Math.min(3, withGithub.length) }, async () => {
+        while (next < withGithub.length) {
+          const c = withGithub[next++];
+          try {
+            external[c.id] = { ...external[c.id], openSource: { repos: await enrich.github!(c.github!.username), account: { username: c.github!.username, declaresLinkedIn: c.github!.declaresLinkedIn } } };
+          } catch (e) {
+            failed++;
+            firstError ||= e instanceof Error ? e.message : "unknown error";
+          }
+        }
+      }));
+      result.external = external;
+      if (failed) result.warnings.push(`GitHub lookup failed for ${failed} candidate(s) (${firstError}). Their open-source signal is unchecked.`);
     }
   }
   result.enriched = { people, companies };

@@ -33,12 +33,12 @@ Start to finish, without a person:
 5. **Writes a briefing** of the strongest candidates, with quotes, flagging people outside your usual pool.
 6. **Finds blind spots.** People outside the companies you usually search whose work evidence supports the brief,
    and, when nobody qualifies, a step-by-step explanation of which rule filtered everyone out.
-7. **Enriches the strongest candidates** with Crustdata Person Enrich (full dated career history, education, summary) and
+7. **Enriches the strongest candidates** with Crustdata Person Enrich (full dated career history, education, summary, matched GitHub account) and
    Company Enrich (founding year, funding stage, engineers on the team), so the next steps read fuller profiles.
 8. **Adds signals beyond role fit** (kept separate from relevance, with their own 0-100 score): **startup veteran** (years at
    pre-seed or seed-stage startups with a lean engineering team, and a sort that ranks these people first), joined companies
    while young, rehired by the same company, fast promotion, lean-team employers, repeat contract hires, competitor
-   experience, plus an optional AI review of the quality of what they post. The landing page lists every metric.
+   experience, **open-source impact** (stars × merged pull requests per repo, from their matched GitHub account), plus an optional AI review of the quality of what they post. The landing page lists every metric.
 9. **Has the budget machinery ready.** Pay ranges per person, a budget per hire, fits / stretch / over marking, filters,
    a Pay tab and a shortlist cost summary are built. **No salary data source is connected right now**, so none of this
    shows until one is (see below).
@@ -62,13 +62,13 @@ Start to finish, without a person:
 | Evidence engine, quote verification, blind spots, signals, enrich merging, pay logic | Covered by 101 automated tests, using a fake model and fake network calls |
 | Pay estimates and budget | Logic, UI and tests are built, but **no salary data source is connected**, so it is dormant |
 | Post-quality review (Crustdata Social Post API) | Run live on 5 candidates: 1 judged (9 posts, quotes verified), 4 had 0 to 2 posts and correctly came back "insufficient" at no cost. About 5 credits for the one judged person |
-| Open-source, patents, citations, product-with-users, closed-company, downturn-promotion signals | Scoring logic built and tested; **not connected to a data source yet** (planned: your Supabase) |
+| Open-source impact (GitHub) | Run live: 7 of the top 10 candidates had a Crustdata-matched GitHub account; merged PRs and repo stars fetched for all 7 (stars × merged PRs per repo) |
+| Patents, citations, product-with-users, closed-company, downturn-promotion signals | Scoring logic built and tested; **not connected to a data source yet** |
 
 ## What it could do in the future
 
-- **Connect the database-backed signals** (open source = stars × merged PRs, patents cited by papers, citations,
-  products with real users, layoffs from closed companies, promotions in difficult periods, repeat contract hires).
-  Waiting on data access and the schema, not on code.
+- **Data sources for the remaining signals:** patents cited by papers, citations, products with real users, layoffs from
+  closed companies, promotions in difficult periods. The scoring logic and tests exist; each needs a data source.
 - **A salary source for the pay feature:** the first candidate is public H-1B wage filings loaded into a table, which gives
   company-specific wages for US employers. Any source that returns a salary histogram per role and country plugs into
   `src/lib/pay/server.ts`.
@@ -100,7 +100,8 @@ npm run dev              # http://localhost:3000
 
 | Key in `.env` | Enables | Without it |
 |---|---|---|
-| `CRUSTDATA_API_KEY` | Live people search (and the optional post review) | Demo mode with a fictional dataset |
+| `CRUSTDATA_API_KEY` | Live people search, enrichment and the optional post review | Demo mode with a fictional dataset |
+| `GITHUB_TOKEN` | Open-source impact. A classic token with **no scopes** is enough (only public data is read) | The open-source signal stays unchecked |
 | `ANTHROPIC_API_KEY` | The AI agents (default model `claude-opus-5-5`; override with `ANTHROPIC_MODEL`, and optionally `ANTHROPIC_REVIEW_MODEL` for a cheaper reviewer) | Keyword rules only |
 
 Run it in **demo mode** with no keys at all: choose **DEMO DATA** in the header. The dataset is entirely fictional.
@@ -150,8 +151,10 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
   profiles with founding year and size range), `/person/enrich` (the top 10 candidates: dated career history, education,
   summary; about 1 credit each), `/company/enrich` (their employers, capped at 40: funding stage, engineers, growth; about
   2 credits each, in batches of 5), and `/social_post/search` (post review, one person at a time, only when you ask; 0.5
-  credits per post). A full AI search with enrichment cost about 144 credits and 51 seconds.
+  credits per post). `dev_platform_profiles` on Person Enrich (about 1 credit each) supplies the matched GitHub account. A full AI search
+  with enrichment and GitHub cost about 150 credits and 52 seconds.
   Server-side only; a 429 is retried once, and the 30 requests/minute limit is surfaced as an error. Details: `docs/crustdata-integration.md`.
+- **GitHub:** the GraphQL API (read-only, public data) for merged pull requests and repo stars of candidates whose GitHub account Crustdata matched.
 - **Other tools:** Frankfurter (free exchange rates) for comparing pay with a budget in another currency.
 - **State:** projects, shortlist, notes, budget and saved content checks live in the browser's `localStorage`
   (`src/lib/persistence/store.ts` defines a `ProjectStore` interface for a database). The server keeps no state.
@@ -185,6 +188,10 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
   overlapping roles (6.9 years at one company), credited one-person "companies" and unfunded shells, and then, once
   tightened, wrongly excluded real startups that LinkedIn labels "Self-Employed". Unit tests passed every time. Scoring a
   real result is what exposed them.
+- **The open-source score is gameable in two ways, which we found on real data.** One merged PR into a famous practice repo
+  ("first-contributions", 56,000 stars) scored 14.5 of 15, so beginner practice repos are ignored. PRs merged into a
+  person's *own* repos are capped at 10, because anyone can merge their own. We also accept a GitHub account only on a high-confidence
+  Crustdata match that the GitHub profile confirms or the name agrees with, and flag name-only matches as "confirm it is them".
 - **Company Enrich returned a 500 for 10 ids at once and worked for 5**, which we found by probing. It now sends batches of
   5 and splits a failing batch so one bad record cannot cost the others.
 

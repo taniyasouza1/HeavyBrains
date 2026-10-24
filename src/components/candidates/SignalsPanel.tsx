@@ -1,7 +1,7 @@
 import { Chip } from "@/components/ui/primitives";
 import type { Signals } from "@/types";
 
-const SOURCE = { profile: "from the profile", database: "from your database", recruiter: "from your input", posts: "from their LinkedIn posts" } as const;
+const SOURCE = { profile: "from the profile", database: "from your database", recruiter: "from your input", posts: "from their LinkedIn posts", github: "from GitHub" } as const;
 
 /** Extra signals beyond role relevance. They have their own score and never change the relevance score. */
 export interface ContentControl {

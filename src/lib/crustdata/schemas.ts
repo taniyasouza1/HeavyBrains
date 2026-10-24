@@ -54,6 +54,12 @@ export const RawPersonSchema = z.looseObject({
       schools: z.array(z.looseObject({ school: str, degree: str, field_of_study: str, start_year: z.number().nullish(), end_year: z.number().nullish() })).nullish(),
     })
     .nullish(),
+  dev_platform_profiles: z
+    .array(z.looseObject({
+      profile_url: str, name: str, confidence_score: z.number().nullish(), total_stars: z.number().nullish(),
+      declared_handles: z.array(z.looseObject({ provider: str, url: str })).nullish(),
+    }))
+    .nullish(),
   updated_at: str,
 });
 

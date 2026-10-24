@@ -92,6 +92,11 @@ function CandidateCard({ c, m }: { c: Candidate; m: CandidateMatch }) {
               {c.profileUrl && (c.source === "demo"
                 ? <span> · mock profile link</span>
                 : <a href={c.profileUrl} target="_blank" rel="noopener noreferrer" className="ml-2 inline-flex items-center gap-1 text-accent hover:underline">Open profile <ExternalLink size={12} aria-hidden /></a>)}
+              {c.github && (
+                <a href={c.github.url} target="_blank" rel="noopener noreferrer" title={c.github.declaresLinkedIn ? "Matched by Crustdata, and the GitHub profile links to this LinkedIn profile" : "Matched by Crustdata and name only. Confirm it is them."} className="ml-2 inline-flex items-center gap-1 text-accent hover:underline">
+                  GitHub{c.github.declaresLinkedIn ? " ✓" : " (name match)"} <ExternalLink size={12} aria-hidden />
+                </a>
+              )}
               <span className="ml-2"><Chip tone={mode === "live" ? "ok" : "warn"}>{mode === "live" ? "LIVE" : "DEMO · FICTIONAL"}</Chip></span>
             </p>
           </div>

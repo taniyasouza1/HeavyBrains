@@ -107,6 +107,9 @@ removed). Also cached search results: re-running a search spends credits again.
 - `POST /company/search`: employer profiles (with founding year and size range), for company context and the lean-team signal.
 - `POST /person/enrich` (**live**): the top 10 candidates get dated career history, education and summary, so the reviewers read
   fuller profiles and the rehire, promotion and contract signals have complete dates. About 1 credit each.
+- `dev_platform_profiles` on Person Enrich (**live**, about 1 credit per person): a GitHub account matched to the LinkedIn profile, with a
+  `confidence_score` and the LinkedIn URL the GitHub profile declares. With a read-only GitHub token we fetch merged PRs and repo stars,
+  which scores the open-source signal. 7 of the top 10 on the Bengaluru brief had a matched account (4 confirmed by the profile, 3 by name).
 - `POST /company/enrich` (**live**): their employers (capped at 40) get funding stage, engineers on the team and growth, which
   powers the "startup veteran" metric: years at pre-seed or seed-stage startups with 15 or fewer engineers. About 2 credits each.
   Found by probing: 10 ids at once returns a 500, 5 works; we batch by 5 and split any batch that fails.

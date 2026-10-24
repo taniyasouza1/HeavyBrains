@@ -2,6 +2,8 @@ import { z } from "zod";
 import { DiscoveryError, runDiscovery, type AiRun, type EnrichRun, type PayRun } from "@/lib/discovery/service";
 import { aiModel, createLlm, isAiConfigured, reviewModel } from "@/lib/ai/client";
 import { payRun } from "@/lib/pay/server";
+import { fetchMergedPrRepos } from "@/lib/github/contributions";
+import { githubGraphql, isGithubConfigured } from "@/lib/github/server";
 import { enrichCompanies, enrichPeople } from "@/lib/crustdata/enrich";
 
 // AI runs chain several model calls, so allow more time than a plain search.
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
     : undefined;
 
   const pay: PayRun | undefined = parsed.data.pay ? payRun() : undefined;
-  const enrich: EnrichRun | undefined = parsed.data.enrich && parsed.data.mode === "live" ? { people: enrichPeople, companies: enrichCompanies } : undefined;
+  const enrich: EnrichRun | undefined = parsed.data.enrich && parsed.data.mode === "live" ? { people: enrichPeople, companies: enrichCompanies, ...(isGithubConfigured() ? { github: (u: string) => fetchMergedPrRepos(u, githubGraphql) } : {}) } : undefined;
 
   const enc = new TextEncoder();
   const stream = new ReadableStream({

@@ -84,7 +84,7 @@ const METRIC_GROUPS: { title: string; sub: string; items: { name: string; text: 
     sub: "Evidence from outside the profile.",
     items: [
       { name: "Quality of what they post", text: "An AI reviewer reads recent LinkedIn posts for real technical substance, not hype. Quotes are checked.", status: "Opt-in" },
-      { name: "Open-source impact", text: "Stars times merged pull requests across their repositories.", status: "Needs data" },
+      { name: "Open-source impact", text: "Stars times merged pull requests, per repository, from the GitHub account Crustdata matched to them. Beginner practice repos are ignored.", status: "Live" },
       { name: "Patents and citations", text: "Patents cited in papers and how often their papers are cited.", status: "Needs data" },
       { name: "Built products with real users", text: "Shipped something people use.", status: "Needs data" },
       { name: "Promoted in a hard period", text: "Moved up while the company was struggling.", status: "Needs data" },
