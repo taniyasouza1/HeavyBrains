@@ -13,6 +13,25 @@ import { BriefingCard } from "./BriefingCard";
 
 const TONE = { must: "accent", nice: "neutral", context: "blind" } as const;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ago = (ms: number) => (ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))} minutes` : ms < DAY_MS ? `${Math.round(ms / 3_600_000)} hours` : `${Math.round(ms / DAY_MS)} days`);
+
+/** People change jobs, so say how old the facts are, and offer a refresh when they are stale or came from the cache. */
+function FreshnessNote({ retrievedAt, fromCache, onRefresh, busy }: { retrievedAt: string; fromCache: boolean; onRefresh: () => void; busy: boolean }) {
+  const [now] = useState(() => Date.now());
+  const age = now - Date.parse(retrievedAt);
+  const stale = age > DAY_MS;
+  if (!stale && !fromCache) return null;
+  return (
+    <div role="status" className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${stale ? "border-warn/40 bg-warn/10 text-warn" : "border-line bg-panel/60 text-muted"}`}>
+      <span>
+        {stale ? `These results are ${ago(age)} old. People change jobs, so some facts may be out of date.` : `Served from cache: this search was retrieved ${ago(age)} ago, so it cost no credits.`}
+      </span>
+      <Button size="sm" variant={stale ? "primary" : "outline"} onClick={onRefresh} disabled={busy}>Refresh results</Button>
+    </div>
+  );
+}
+
 export function DiscoverView() {
   const { project, hydrated, run, runDiscovery } = useApp();
   const [editing, setEditing] = useState<boolean | null>(null);
@@ -70,6 +89,9 @@ export function DiscoverView() {
       )}
 
       {(run.phase === "running" || run.phase === "error") && <RunPanel />}
+      {project.result && (
+        <FreshnessNote retrievedAt={project.result.retrievedAt} fromCache={!!project.result.cache?.hit} busy={run.phase === "running"} onRefresh={() => void runDiscovery({ refresh: true })} />
+      )}
       <BriefingCard />
       <ResultsList />
     </div>

@@ -1,6 +1,8 @@
 import { z } from "zod";
+import type { DiscoveryResult } from "@/types";
 import { DiscoveryError, runDiscovery, type AiRun, type EnrichRun, type PayRun } from "@/lib/discovery/service";
 import { aiModel, createLlm, isAiConfigured, reviewModel } from "@/lib/ai/client";
+import { cacheKey, readCache, writeCache } from "@/lib/discovery/cache";
 import { payRun } from "@/lib/pay/server";
 import { fetchMergedPrRepos } from "@/lib/github/contributions";
 import { githubGraphql, isGithubConfigured } from "@/lib/github/server";
@@ -26,6 +28,8 @@ const BodySchema = z.object({
   pay: z.boolean().default(false),
   /** Run Crustdata Person Enrich and Company Enrich on the top candidates (live mode only; costs credits). */
   enrich: z.boolean().default(false),
+  /** Skip the 24-hour result cache and fetch fresh data. */
+  refresh: z.boolean().default(false),
   /** The brief text; the Brief Analyst reads it when `reanalyze` is true. */
   roleDescription: z.string().max(MAX_BRIEF).default(""),
   reanalyze: z.boolean().default(false),
@@ -39,6 +43,9 @@ const BodySchema = z.object({
     previouslyEvaluated: z.array(z.string().max(120)).max(200), includeOutsideUsual: z.boolean(),
   }),
 });
+
+// Identical searches that are running right now share one run instead of each paying for it.
+const inflight = new Map<string, Promise<DiscoveryResult>>();
 
 /** Streams newline-delimited JSON: {type:"progress"} events as real operations start, then one result or error. */
 export async function POST(req: Request) {
@@ -68,7 +75,28 @@ export async function POST(req: Request) {
     async start(controller) {
       const send = (o: unknown) => controller.enqueue(enc.encode(JSON.stringify(o) + "\n"));
       try {
-        const result = await runDiscovery(parsed.data, (e) => send({ type: "progress", ...e }), ai, pay, enrich);
+        // The key covers everything that changes the answer. The brief only matters when the Brief Analyst will read it.
+        const d = parsed.data;
+        const key = cacheKey({
+          mode: d.mode, limit: d.limit, ai: d.ai, reanalyze: d.reanalyze, roleDescription: d.ai && d.reanalyze ? d.roleDescription : "",
+          criteria: d.criteria, preferences: d.preferences, enrich: !!enrich, pay: !!pay,
+        });
+        if (!d.refresh) {
+          const hit = await readCache(key);
+          if (hit) {
+            send({ type: "progress", stage: "Served from cache", detail: "An identical search finished in the last 24 hours, so no credits were used" });
+            send({ type: "result", result: { ...hit, cache: { hit: true, cachedAt: hit.retrievedAt } } });
+            return;
+          }
+        }
+        let run = d.refresh ? undefined : inflight.get(key);
+        if (!run) {
+          run = runDiscovery(d, (e) => send({ type: "progress", ...e }), ai, pay, enrich);
+          if (!d.refresh) { inflight.set(key, run); void run.finally(() => inflight.delete(key)).catch(() => {}); }
+        }
+        const result = await run;
+        result.cache = { hit: false, cachedAt: result.retrievedAt };
+        if (result.candidates.length) await writeCache(key, result).catch(() => {}); // a cache write failure never fails the search
         send({ type: "result", result });
       } catch (e) {
         const known = e instanceof DiscoveryError;

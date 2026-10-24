@@ -109,7 +109,7 @@ function Workspace({ pathname, children }: { pathname: string; children: React.R
             {resultMode && resultMode !== mode && <Chip tone="warn" title="The displayed results were retrieved in a different mode. Re-run discovery to refresh.">results: {resultMode}</Chip>}
             <Button variant="primary" size="sm" onClick={() => void runDiscovery({ refresh: true })} disabled={!project || run.phase === "running" || !!liveBlocked || !!aiBlocked}
               title={liveBlocked ? "Live mode needs CRUSTDATA_API_KEY on the server" : aiBlocked ? "AI agents need ANTHROPIC_API_KEY on the server" : undefined}>
-              {run.phase === "running" ? "Running…" : project?.result ? "Re-run discovery" : "Run discovery"}
+              {run.phase === "running" ? "Running…" : project?.result ? "Refresh results" : "Run discovery"}
             </Button>
           </div>
         </header>
