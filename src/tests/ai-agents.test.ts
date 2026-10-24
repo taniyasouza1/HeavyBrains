@@ -3,7 +3,7 @@ import type { z } from "zod";
 
 vi.mock("server-only", () => ({}));
 
-import { quoteAppearsIn, reviewCandidates, sanitizeBriefing, sanitizeCriteria, verifyPickQuotes, AnalystOut } from "@/lib/ai/agents";
+import { quoteAppearsIn, reviewCandidates, reviewContent, sanitizeBriefing, sanitizeContent, sanitizeCriteria, verifyPickQuotes, AnalystOut } from "@/lib/ai/agents";
 import { AgentError, type Llm } from "@/lib/ai/types";
 import { assessCandidate } from "@/lib/discovery/ranking";
 import { runDiscovery, DiscoveryError } from "@/lib/discovery/service";
@@ -64,6 +64,14 @@ describe("sanitizeCriteria", () => {
     expect(out.roleTitle).toBe("Staff Platform Engineer");
     expect(out.minYears).toBe(7);
     expect(out.seniority).toBe("staff");
+  });
+  it("keeps every field inside the limits the discovery route validates", () => {
+    const long = "x".repeat(300);
+    const out = sanitizeCriteria({ ...raw([c(long, ["a-term"])]), context: long, location: long, seniority: long });
+    expect(out.criteria.every((k) => k.id.length <= 80 && k.label.length <= 120)).toBe(true);
+    expect(out.context!.length).toBeLessThanOrEqual(500);
+    expect(out.location!.length).toBeLessThanOrEqual(120);
+    expect(out.seniority!.length).toBeLessThanOrEqual(40);
   });
   it("throws when nothing usable comes back", () => {
     expect(() => sanitizeCriteria(raw([c("Empty", [])]))).toThrow();
@@ -191,5 +199,35 @@ describe("runDiscovery with AI agents (demo data)", () => {
     expect(res.candidates.length).toBeGreaterThan(0);
     expect(res.briefing).toBeUndefined();
     expect(res.warnings.join(" ")).toMatch(/briefing could not be written/);
+  });
+});
+
+describe("content review", () => {
+  const posts = [
+    { text: "We cut p99 latency from 900ms to 120ms by moving the ledger writes behind a single-writer queue, and it broke twice before it worked.", url: "u0" },
+    { text: "Excited to announce we are hiring! Join our amazing team today and change the world." },
+    { text: "Postmortem: a retry storm took down our payments gateway for 11 minutes. Here is the timeline and what we changed in the backoff." },
+  ];
+  const out = (o: Partial<Parameters<typeof sanitizeContent>[0]>) => ({ verdict: "builder" as const, summary: "Shares real incidents.", evidence: [], ...o });
+
+  it("keeps a verified quote and links it to its post", () => {
+    const c = sanitizeContent(out({ evidence: [{ postIndex: 0, quote: "cut p99 latency from 900ms to 120ms", why: "A concrete measured result." }] }), posts, "m");
+    expect(c.verdict).toBe("builder");
+    expect(c.evidence).toEqual([{ quote: "cut p99 latency from 900ms to 120ms", why: "A concrete measured result.", postUrl: "u0" }]);
+    expect(c.postsReviewed).toBe(3);
+  });
+  it("downgrades a positive verdict whose quotes cannot be found in the posts", () => {
+    const c = sanitizeContent(out({ evidence: [{ postIndex: 0, quote: "an invented sentence about Kubernetes operators", why: "x" }, { postIndex: 9, quote: "cut p99 latency from 900ms to 120ms", why: "wrong index" }] }), posts, "m");
+    expect(c.verdict).toBe("insufficient");
+    expect(c.evidence).toEqual([]);
+  });
+  it("does not need quotes to call posts promotional", () => {
+    expect(sanitizeContent(out({ verdict: "promotional" }), posts, "m").verdict).toBe("promotional");
+  });
+  it("skips the model entirely when there are too few posts", async () => {
+    const llm = fakeLlm({});
+    const c = await reviewContent(llm, { name: "P" }, posts.slice(0, 2), "m");
+    expect(c.verdict).toBe("insufficient");
+    expect(llm.calls).toEqual([]);
   });
 });

@@ -32,6 +32,10 @@ export function PreferencesPanel() {
           placeholder="e.g. Northwind Pay, Halcyon Bank"
         />
         <ListField label="Companies to exclude" value={pr.excludedCompanies} onCommit={(v) => set({ excludedCompanies: v })} hint="Candidates currently employed there are hidden unless you choose to show them." />
+        <ListField
+          label="Competitors (optional)" value={pr.competitors ?? []} onCommit={(v) => set({ competitors: v })}
+          hint="Used for the “same experience at a competitor” signal. Leave empty and that signal is simply not checked."
+        />
         <ListField label="Already interviewed or evaluated" value={pr.previouslyEvaluated} onCommit={(v) => set({ previouslyEvaluated: v })} hint="Candidate names, as you supply them. Flagged in results; not auto-removed." />
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" className="mt-1 accent-[var(--accent)]" checked={pr.includeOutsideUsual} onChange={(e) => set({ includeOutsideUsual: e.target.checked })} />

@@ -16,6 +16,7 @@ development environment, so none is used. Docs: <https://docs.crustdata.com/> (A
 |---|---|
 | `POST /person/search` | Candidate pool. Body: `filters` (single condition or `{op, conditions}` group), `fields`, `limit`, `cursor`. Response: `profiles`, `next_cursor`, `total_count`. |
 | `POST /company/search` | Employer profiles by `crustdata_company_id` `in [...]`. Response: `companies`, `next_cursor`, `total_count`. |
+| `POST /social_post/search` | **On demand only**, one person at a time, for the optional post-quality signal (`src/lib/crustdata/posts.ts`). Filter `actor.professional_network_url = <profile url>`, sorted by `date_posted` desc. Response: `posts`, `next_cursor`, `total_count`. Costs 0.5 credits per post returned; must be enabled on the account (403 otherwise). Built from the docs; **not yet run live**. |
 
 Verified filter paths: `experience.employment_details.current.title` (`(.)`), `experience.employment_details.current.company_name`
 (`in`), `experience.employment_details.description` (`(.)`), `basic_profile.location.full_location`, `crustdata_company_id`.
@@ -48,7 +49,7 @@ Company search (requested fields): `basic_info.{name, primary_domain, descriptio
 - **Profile summary** and **skills** are not returned by search. `basic_profile.summary` needs Person Enrich (not used, to
   limit cost). `skills` requires account access (403 otherwise): set `CRUSTDATA_INCLUDE_SKILLS=true` only if your plan has it.
 - Descriptions are self-reported text. They can show *what someone says they worked on*, not scale, ownership or quality.
-- Not used: `/person/enrich`, job-posting/hiring-signal endpoints, live (enterprise) endpoints, `search` natural-language mode.
+- Not used: `/person/enrich`, job-posting/hiring-signal endpoints, social-post watchers, live (enterprise) endpoints, `search` natural-language mode.
 - Unverified in docs but handled defensively: any field not listed above is optional in the zod schemas (`schemas.ts`);
   profiles without a name or any identifier are dropped and counted in the run warnings.
 

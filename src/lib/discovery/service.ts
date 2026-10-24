@@ -1,5 +1,5 @@
 import "server-only";
-import type { Candidate, Company, DataMode, DiscoveryResult, RecruiterPreferences, RoleCriteria } from "@/types";
+import type { Candidate, Company, DataMode, FxTable, DiscoveryResult, RecruiterPreferences, RoleCriteria } from "@/types";
 import { DEMO_CANDIDATES, DEMO_COMPANIES } from "@/lib/demo/dataset";
 import { CrustdataError, isLiveConfigured } from "@/lib/crustdata/client";
 import { HARD_LIMITS, liveProvider, type Filter } from "@/lib/crustdata/provider";
@@ -7,6 +7,7 @@ import { titleQueryTerms } from "./criteria";
 import { dedupeCandidates } from "./ranking";
 import { normalizeName } from "@/lib/utils/text";
 import { analyzePool } from "./analysis";
+import { estimatePay, type HistogramFetcher } from "@/lib/pay/estimate";
 import { analyzeBrief, planSearch, reviewCandidates, writeBriefing, type SearchPlan } from "@/lib/ai/agents";
 import { AgentError, type Llm } from "@/lib/ai/types";
 
@@ -17,6 +18,12 @@ export interface DiscoveryRequest {
   criteria: RoleCriteria;
   preferences: RecruiterPreferences;
   limit: number;
+}
+
+/** Set when salary estimates are wanted. The fetchers are injected so tests can run without keys. */
+export interface PayRun {
+  fetchHistogram: HistogramFetcher;
+  fetchRates: (currencies: string[]) => Promise<FxTable>;
 }
 
 /** Set when AI agents take part. `reanalyze` means the Brief Analyst should rewrite the criteria from the brief. */
@@ -144,7 +151,7 @@ const agentFailure = (e: unknown) =>
  * Brief Analyst -> Search Strategist -> (retrieval) -> Evidence Reviewers -> Briefing Writer.
  * Code orchestrates them. Scores still come only from quoted profile text, so AI cannot raise a score without a verifiable quote.
  */
-export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, ai?: AiRun): Promise<DiscoveryResult> {
+async function runCore(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, ai?: AiRun): Promise<DiscoveryResult> {
   if (!ai) return retrieve(req, emit);
 
   const agents: string[] = [];
@@ -209,5 +216,31 @@ export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEven
 
   if (analyzed) result.criteria = criteria;
   result.ai = { model: ai.model, agents };
+  return result;
+}
+
+/** Attaches estimated market pay. Failures become warnings: pay is supplementary and never blocks the search. */
+async function addPay(result: DiscoveryResult, emit: (e: ProgressEvent) => void, pay: PayRun) {
+  emit({ stage: "Estimating market pay", detail: `${result.candidates.length} candidates, by role and country` });
+  const r = await estimatePay(result.candidates, pay.fetchHistogram);
+  result.pay = r.pay;
+  result.warnings.push(...r.warnings);
+  if (!Object.keys(r.pay).length) return;
+  const budgetCurrencies = ["USD", "EUR", "GBP", "INR", "CAD", "AUD", "SGD"]; // so a budget in any common currency can be compared
+  try {
+    result.fx = await pay.fetchRates([...Object.values(r.pay).map((p) => p.currency), ...budgetCurrencies]);
+  } catch (e) {
+    result.warnings.push(`Exchange rates are unavailable (${e instanceof Error ? e.message : "unknown error"}), so pay is shown in local currencies and cannot be compared with your budget.`);
+  }
+}
+
+/**
+ * Full discovery run. Without `ai` it is the plain pipeline. With `ai`, specialist agents join in:
+ * Brief Analyst -> Search Strategist -> (retrieval) -> Evidence Reviewers -> Briefing Writer.
+ * With `pay`, market pay is estimated for each candidate afterwards.
+ */
+export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, ai?: AiRun, pay?: PayRun): Promise<DiscoveryResult> {
+  const result = await runCore(req, emit, ai);
+  if (pay && result.candidates.length) await addPay(result, emit, pay);
   return result;
 }

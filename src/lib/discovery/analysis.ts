@@ -2,8 +2,9 @@ import type {
   AiEvidence, Candidate, CandidateMatch, Criterion, CriterionAssessment, DiscoveryResult, PoolView,
   RecruiterPreferences, RoleCriteria,
 } from "@/types";
+import { computeSignals } from "@/lib/signals";
 import { assessCandidate, DEFAULT_SCORING, type ScoringConfig } from "./ranking";
-import { isAlreadyEvaluated, isBlindSpot, isExcluded, isInUsualPool, pastEmployerInUsualPool } from "./blind-spots";
+import { BLIND_SPOT_MIN_SCORE, isAlreadyEvaluated, isBlindSpot, isExcluded, isInUsualPool, pastEmployerInUsualPool } from "./blind-spots";
 
 const dataLimitations = (c: Candidate): string[] => {
   const out: string[] = [];
@@ -55,7 +56,7 @@ function explain(
 }
 
 export function analyzePool(
-  result: Pick<DiscoveryResult, "candidates" | "companies"> & Partial<Pick<DiscoveryResult, "aiEvidence">>,
+  result: Pick<DiscoveryResult, "candidates" | "companies"> & Partial<Pick<DiscoveryResult, "aiEvidence" | "external" | "companyFacts">>,
   role: RoleCriteria,
   prefs: RecruiterPreferences,
   config: ScoringConfig = DEFAULT_SCORING,
@@ -73,10 +74,27 @@ export function analyzePool(
       candidateId: c.id, score, assessments, inUsualPool,
       excluded: isExcluded(c, prefs), alreadyEvaluated: isAlreadyEvaluated(c, prefs), blindSpot,
       whyAppeared: why, needsVerification: verify, discoveryReason: reason, dataLimitations: dataLimitations(c),
+      mustSupported: supportedMust, mustTotal: technicalMust.size,
+      signals: computeSignals(c, result.companies, prefs, result.external?.[c.id], result.companyFacts),
     };
   });
   const name = new Map(result.candidates.map((c) => [c.id, c.name]));
   return matches.sort((a, b) => b.score - a.score || (name.get(a.candidateId)! < name.get(b.candidateId)! ? -1 : 1));
+}
+
+/** Explains, with counts, why the Blind-Spot list is the size it is. Mirrors the rules in isBlindSpot. */
+export function diagnoseBlindSpots(matches: CandidateMatch[], prefs: RecruiterPreferences) {
+  const outside = matches.filter((m) => !m.excluded && !m.inUsualPool);
+  const clearsScore = outside.filter((m) => m.score >= BLIND_SPOT_MIN_SCORE);
+  const need = (m: CandidateMatch) => Math.max(1, Math.ceil(m.mustTotal / 2));
+  const clearsEvidence = clearsScore.filter((m) => m.mustSupported >= need(m));
+  // The closest misses are outside people ranked by how near they came to both thresholds.
+  const closest = [...outside].sort((a, b) => b.score - a.score).slice(0, 3);
+  return {
+    hasUsualList: prefs.usualCompanies.length > 0,
+    total: matches.length, outside: outside.length, clearsScore: clearsScore.length, clearsEvidence: clearsEvidence.length,
+    minScore: BLIND_SPOT_MIN_SCORE, mustTotal: matches[0]?.mustTotal ?? 0, mustNeeded: matches[0] ? need(matches[0]) : 0, closest,
+  };
 }
 
 /** Applies the recruiter's pool view. Candidates are never duplicated across views — each is filtered from one list. */

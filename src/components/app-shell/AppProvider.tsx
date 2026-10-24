@@ -15,7 +15,7 @@ type RunState =
   | { phase: "error"; code: string; message: string }
   | { phase: "done"; steps: { stage: string; detail?: string; agent?: boolean }[] };
 
-interface Status { liveConfigured: boolean; defaultMode: DataMode; aiConfigured?: boolean; aiModel?: string }
+interface Status { liveConfigured: boolean; defaultMode: DataMode; aiConfigured?: boolean; aiModel?: string; payConfigured?: boolean; contentConfigured?: boolean }
 
 /** AI agents run when the project says so, or by default when the server has a key. */
 export const aiEnabled = (p: SourcingProject | null, st: Status | null) => (p?.ai ?? !!st?.aiConfigured);
@@ -41,6 +41,9 @@ interface Ctx {
   runDiscovery: () => Promise<void>;
   setMode: (m: DataMode) => void;
   setAi: (on: boolean) => void;
+  /** On-demand LinkedIn post review for one candidate. Costs Crustdata credits, so it never runs automatically. */
+  checkContent: (candidateId: string) => Promise<void>;
+  contentState: Record<string, "loading" | { error: string }>;
   selection: Selection;
   select: (s: Selection) => void;
   view: PoolView;
@@ -144,10 +147,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [activeId]);
 
   const result = project?.result;
-  const matches = useMemo(
-    () => (project && result ? analyzePool(result, project.criteria, project.preferences) : []),
-    [project?.criteria, project?.preferences, result], // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  const matches = useMemo(() => {
+    if (!project || !result) return [];
+    // Saved content checks join whatever external data the search returned, so they count in each person's Signals score.
+    const external = { ...result.external };
+    for (const [id, content] of Object.entries(project.contentChecks ?? {})) external[id] = { ...external[id], content };
+    return analyzePool({ ...result, external }, project.criteria, project.preferences);
+  }, [project?.criteria, project?.preferences, project?.contentChecks, result]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track rank movement caused by criteria/preference edits so changed ordering is explainable.
   useEffect(() => {
@@ -189,6 +195,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRun({ phase: "idle" });
   }, [update]);
 
+  const [contentState, setContentState] = useState<Record<string, "loading" | { error: string }>>({});
+  const checkContent = useCallback(async (id: string) => {
+    const cand = project?.result?.candidates.find((c) => c.id === id);
+    if (!cand?.profileUrl) return;
+    setContentState((s) => ({ ...s, [id]: "loading" }));
+    try {
+      const res = await fetch("/api/content-check", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profileUrl: cand.profileUrl, name: cand.name, headline: cand.headline }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.check) { setContentState((s) => ({ ...s, [id]: { error: j.error ?? `Request failed (${res.status}).` } })); return; }
+      update((p) => ({ ...p, contentChecks: { ...p.contentChecks, [id]: j.check } }));
+      setContentState((s) => { const { [id]: _done, ...rest } = s; void _done; return rest; });
+    } catch {
+      setContentState((s) => ({ ...s, [id]: { error: "Could not reach the HeavyBrains server." } }));
+    }
+  }, [project, update]);
+
   const runDiscovery = useCallback(async () => {
     if (!project || running.current) return; // blocks duplicate submissions
     running.current = true;
@@ -210,7 +235,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setRun({ phase: "running", steps: [] });
       const res = await fetch("/api/discovery", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: project.mode, criteria: criteria.roleTitle ? criteria : { ...criteria, roleTitle: "Role" }, preferences: project.preferences, limit: 50, ai: useAi, reanalyze, roleDescription: project.roleDescription }),
+        body: JSON.stringify({ mode: project.mode, criteria: criteria.roleTitle ? criteria : { ...criteria, roleTitle: "Role" }, preferences: project.preferences, limit: 50, ai: useAi, pay: !!status?.payConfigured, reanalyze, roleDescription: project.roleDescription }),
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
@@ -257,7 +282,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value: Ctx = {
     hydrated, status, projects, project, update, createProject, openProject, deleteProject, matches, candidates, companies,
-    companyByName, stateOf, patchCandidate, run, runDiscovery, setMode, setAi, selection, select, view, setView, showExcluded,
+    companyByName, stateOf, patchCandidate, run, runDiscovery, setMode, setAi, checkContent, contentState, selection, select, view, setView, showExcluded,
     setShowExcluded, rankDelta,
   };
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

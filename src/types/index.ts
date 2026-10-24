@@ -25,6 +25,79 @@ export interface RoleCriteria {
   criteria: Criterion[];
 }
 
+/** Data about a person from outside the retrieved profile (e.g. your own database). Every field is optional. */
+/** The Content Reviewer's verdict on a person's recent LinkedIn posts. Every quote was checked against the posts. */
+export interface ContentCheck {
+  verdict: "builder" | "mixed" | "promotional" | "insufficient";
+  summary: string;
+  evidence: { quote: string; why: string; postUrl?: string }[];
+  postsReviewed: number;
+  checkedAt: string;
+  model: string;
+}
+
+export interface ExternalSignals {
+  content?: ContentCheck;
+  openSource?: { repos: { name: string; stars: number; mergedPrs: number }[] };
+  patents?: { count: number; citedByPapers: number };
+  papers?: { citations: number };
+  productWithUsers?: { name: string; users?: number };
+  /** Companies that hired this person repeatedly on contract roles, and how many times. */
+  repeatContractHires?: { company: string; times: number }[];
+}
+
+/** Reference data about companies, shared across all candidates in a result. */
+export interface CompanyFacts {
+  /** Companies that have shut down, with the closing date (YYYY-MM or YYYY-MM-DD). */
+  closed?: { name: string; closedOn: string }[];
+  /** Difficult business periods for a company (layoffs, cash crunch, market downturn). */
+  downturns?: { company: string; from: string; to: string; reason?: string }[];
+}
+
+export type SignalId =
+  | "open_source" | "patents" | "citations" | "product_with_users" | "boomerang" | "fast_promotion"
+  | "lean_team" | "competitor" | "repeat_contract" | "promoted_in_downturn" | "closed_company" | "content_quality";
+
+export interface SignalResult {
+  id: SignalId;
+  label: string;
+  /** found: evidence earned points. none: checked, nothing found. unchecked: the data to check it is not available. */
+  status: "found" | "none" | "unchecked";
+  earned: number;
+  max: number;
+  evidence: string[];
+  source: "profile" | "database" | "recruiter" | "posts";
+  note?: string;
+}
+
+export interface Signals {
+  /** 0-100 over the signals that could be checked. Undefined when none could be checked. */
+  score?: number;
+  checked: number;
+  total: number;
+  results: SignalResult[];
+}
+
+/** Estimated market pay for a person's role and place. Never the person's own pay. */
+export interface PayEstimate {
+  /** 25th, 50th and 75th percentile of annual pay, in `currency`. */
+  low: number;
+  mid: number;
+  high: number;
+  currency: string;
+  country: string;
+  /** The search phrase the estimate is based on. */
+  query: string;
+  /** True when the exact title had too little data and a broader role phrase was used. */
+  broadened: boolean;
+  sampleSize: number;
+  /** Where the benchmark came from, shown to the user. */
+  source: string;
+}
+
+/** Currency units per 1 unit of `base`. */
+export interface FxTable { base: string; rates: Record<string, number>; asOf?: string }
+
 export interface RecruiterPreferences {
   /** Companies the recruiter says they usually search. Recruiter-supplied, not a quality claim. */
   usualCompanies: string[];
@@ -32,6 +105,10 @@ export interface RecruiterPreferences {
   /** Names the recruiter has already interviewed or evaluated. Recruiter-supplied. */
   previouslyEvaluated: string[];
   includeOutsideUsual: boolean;
+  /** Competitor companies, for "has the same experience at a competitor". Optional; older saved projects lack it. */
+  competitors?: string[];
+  /** Annual budget ceiling for one hire. Used to colour and filter pay estimates; never sent to the server. */
+  budget?: { max?: number; currency: string };
 }
 
 export interface Employment {
@@ -115,6 +192,10 @@ export interface CandidateMatch {
   needsVerification: string[];
   discoveryReason: string;
   dataLimitations: string[];
+  signals: Signals;
+  /** Technical must-have criteria with supported evidence, and how many exist. Used by the Blind-Spot rules. */
+  mustSupported: number;
+  mustTotal: number;
 }
 
 /** Evidence an AI reviewer found that keyword matching missed. The quote is verified verbatim against the profile. */
@@ -143,6 +224,12 @@ export interface DiscoveryResult {
   /** Criteria the search actually used. Set when the Brief Analyst (re)wrote them. */
   criteria?: RoleCriteria;
   aiEvidence?: AiEvidence[];
+  /** Per-candidate data from outside the profile, keyed by candidate id. */
+  external?: Record<string, ExternalSignals>;
+  companyFacts?: CompanyFacts;
+  /** Estimated market pay per candidate, keyed by candidate id. */
+  pay?: Record<string, PayEstimate>;
+  fx?: FxTable;
   briefing?: Briefing;
   /** Present when AI agents took part in this run. */
   ai?: { model: string; agents: string[] };
@@ -171,6 +258,8 @@ export interface SourcingProject {
   /** The brief text the current criteria were derived from, so edits to it trigger re-analysis. */
   briefAnalyzed?: string;
   result?: DiscoveryResult;
+  /** On-demand content checks, by candidate id. Kept with the project so they are not paid for twice. */
+  contentChecks?: Record<string, ContentCheck>;
   candidateState: Record<string, CandidateState>;
   createdAt: string;
   updatedAt: string;

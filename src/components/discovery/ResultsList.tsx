@@ -5,11 +5,13 @@ import { motion } from "motion/react";
 import { IconArrowDown as ArrowDown, IconArrowUp as ArrowUp, IconCompass as Compass, IconStar as Star } from "@tabler/icons-react";
 import { useApp } from "@/components/app-shell/AppProvider";
 import { Button, Chip, EmptyState, ScoreBar, Section, Segmented, Skeleton, cx, inputCls, selectCls } from "@/components/ui/primitives";
-import { filterByView } from "@/lib/discovery/analysis";
+import { diagnoseBlindSpots, filterByView } from "@/lib/discovery/analysis";
+import { budgetFit, convert, rangeLabel, type BudgetFit } from "@/lib/pay/money";
+import { BudgetControl, type BudgetFilter } from "./BudgetControl";
 import { splitList } from "@/lib/utils/text";
-import type { Candidate, CandidateMatch, PoolView } from "@/types";
+import type { Candidate, CandidateMatch, PoolView, RecruiterPreferences } from "@/types";
 
-type Sort = "score" | "name" | "company";
+type Sort = "score" | "blend" | "pay" | "name" | "company";
 
 export function currentCompany(c: Candidate) {
   return c.employment.find((e) => e.current)?.company;
@@ -22,8 +24,11 @@ export function ResultsList() {
   const [must, setMust] = useState("");
   const [onlyShort, setOnlyShort] = useState(false);
   const [hideDone, setHideDone] = useState(false);
+  const [budgetFilter, setBudgetFilter] = useState<BudgetFilter>("any");
 
   const prefs = project?.preferences;
+  const pay = project?.result?.pay;
+  const fx = project?.result?.fx;
   const counts = useMemo(() => {
     if (!prefs) return { all: 0, usual: 0, blind: 0 };
     return {
@@ -46,14 +51,27 @@ export function ResultsList() {
       if (hideDone && (m.alreadyEvaluated || s.feedback === "not_relevant" || s.feedback === "already_considered" || s.feedback === "wrong_background")) return false;
       return true;
     });
-    if (sort !== "score") {
+    if (budgetFilter !== "any") {
+      list = list.filter((m) => {
+        const f = budgetFit(pay?.[m.candidateId], prefs, fx);
+        return budgetFilter === "fits" ? f === "fits" : f !== "over"; // unknown stays visible when only hiding "over"
+      });
+    }
+    if (sort === "pay") {
+      const mid = (id: string) => { const e = pay?.[id]; return e ? convert(e.mid, e.currency, prefs.budget?.currency ?? e.currency, fx) ?? e.mid : Infinity; };
+      list = [...list].sort((a, b) => mid(a.candidateId) - mid(b.candidateId)); // cheapest first, unknown last
+    } else if (sort === "blend") {
+      // 70% relevance, 30% signals. A person whose signals could not be checked is ranked on relevance alone, not penalised.
+      const blend = (m: CandidateMatch) => (m.signals.score == null ? m.score : 0.7 * m.score + 0.3 * m.signals.score);
+      list = [...list].sort((a, b) => blend(b) - blend(a));
+    } else if (sort !== "score") {
       list = [...list].sort((a, b) => {
         const ca = candidates.get(a.candidateId)!, cb = candidates.get(b.candidateId)!;
         return sort === "name" ? ca.name.localeCompare(cb.name) : (currentCompany(ca) ?? "").localeCompare(currentCompany(cb) ?? "");
       });
     }
     return list;
-  }, [matches, prefs, view, showExcluded, q, sort, must, onlyShort, hideDone, candidates, stateOf]);
+  }, [matches, prefs, view, showExcluded, q, sort, must, onlyShort, hideDone, budgetFilter, pay, fx, candidates, stateOf]);
 
   if (!project) return null;
 
@@ -84,13 +102,14 @@ export function ResultsList() {
         />
         <input aria-label="Search results" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, title, company…" className={cx(inputCls, "!w-60")} />
         <select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={selectCls}>
-          <option value="score">Sort: match score</option><option value="name">Sort: name</option><option value="company">Sort: company</option>
+          <option value="score">Sort: match score</option><option value="blend">Sort: relevance + signals</option>{pay && <option value="pay">Sort: est. pay, low to high</option>}<option value="name">Sort: name</option><option value="company">Sort: company</option>
         </select>
         <select aria-label="Filter by criterion" value={must} onChange={(e) => setMust(e.target.value)} className={cx(selectCls, "max-w-56")}>
           <option value="">Any evidence</option>
           {project.criteria.criteria.map((c) => <option key={c.id} value={c.id}>Has evidence: {c.label}</option>)}
         </select>
       </div>
+      <div className="mt-3"><BudgetControl filter={budgetFilter} setFilter={setBudgetFilter} /></div>
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
         <label className="flex items-center gap-1.5"><input type="checkbox" className="accent-[var(--accent)]" checked={onlyShort} onChange={(e) => setOnlyShort(e.target.checked)} />Shortlisted only</label>
         <label className="flex items-center gap-1.5"><input type="checkbox" className="accent-[var(--accent)]" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />Hide already-evaluated / marked not relevant</label>
@@ -110,7 +129,9 @@ export function ResultsList() {
         )
       )}
 
-      {rows.length === 0 && view === "blindspot" && blindUnavailable ? null : rows.length === 0 ? (
+      {rows.length === 0 && view === "blindspot" && blindUnavailable ? null : rows.length === 0 && view === "blindspot" ? (
+        <BlindSpotWhy matches={matches} prefs={project.preferences} name={(id) => candidates.get(id)?.name ?? id} onOpen={(id) => select({ candidateId: id })} />
+      ) : rows.length === 0 ? (
         <div className="mt-4">
           <EmptyState
             title={view === "blindspot" && !blindUnavailable ? "No blind-spot candidates in this pool" : "No candidates match these filters"}
@@ -122,6 +143,7 @@ export function ResultsList() {
         <ul className="mt-4 divide-y divide-line overflow-hidden rounded-md border border-line">
           {rows.map((m, i) => <Row key={m.candidateId} i={i} m={m} c={candidates.get(m.candidateId)!} selected={selection.candidateId === m.candidateId}
             shortlisted={stateOf(m.candidateId).shortlisted} delta={rankDelta.get(m.candidateId)} feedback={stateOf(m.candidateId).feedback}
+            payInfo={pay?.[m.candidateId] ? { label: rangeLabel(pay[m.candidateId], project.preferences.budget?.currency, fx), fit: budgetFit(pay[m.candidateId], project.preferences, fx) } : undefined}
             onOpen={() => select({ candidateId: m.candidateId })}
             onToggle={() => patchCandidate(m.candidateId, { shortlisted: !stateOf(m.candidateId).shortlisted })} />)}
         </ul>
@@ -131,7 +153,8 @@ export function ResultsList() {
   );
 }
 
-function Row({ i, m, c, selected, shortlisted, delta, feedback, onOpen, onToggle }: {
+function Row({ i, m, c, selected, shortlisted, delta, feedback, payInfo, onOpen, onToggle }: {
+  payInfo?: { label: string; fit: BudgetFit };
   i: number; m: CandidateMatch; c: Candidate; selected: boolean; shortlisted: boolean; delta?: number; feedback?: string; onOpen: () => void; onToggle: () => void;
 }) {
   const why = m.whyAppeared[0] ?? m.needsVerification[0] ?? "No evidence for the criteria in the retrieved profile.";
@@ -159,6 +182,16 @@ function Row({ i, m, c, selected, shortlisted, delta, feedback, onOpen, onToggle
           {delta ? <span className={cx("flex items-center text-[11px] tabular-nums", delta > 0 ? "text-ok" : "text-warn")} title={`Moved ${delta > 0 ? "up" : "down"} ${Math.abs(delta)} after your last change`}>{delta > 0 ? <ArrowUp size={11} /> : <ArrowDown size={11} />}{Math.abs(delta)}</span> : null}
           <ScoreBar score={m.score} blind={m.blindSpot} />
         </div>
+        {payInfo && (
+          <span title="Estimated market pay for this role and place, not this person's pay">
+            <Chip tone={payInfo.fit === "fits" ? "ok" : payInfo.fit === "stretch" ? "warn" : payInfo.fit === "over" ? "err" : "neutral"}>Est. {payInfo.label}</Chip>
+          </span>
+        )}
+        {m.signals.score != null && m.signals.results.some((r) => r.status === "found") && (
+          <span title={m.signals.results.filter((r) => r.status === "found").map((r) => r.label).join(", ") || "No signals found"}>
+            <Chip tone="ok">Signals {m.signals.score}</Chip>
+          </span>
+        )}
         <Button size="sm" variant={shortlisted ? "primary" : "outline"} onClick={onToggle} aria-pressed={shortlisted} aria-label={shortlisted ? `Remove ${c.name} from shortlist` : `Add ${c.name} to shortlist`}>
           <Star size={12} aria-hidden fill={shortlisted ? "currentColor" : "none"} />{shortlisted ? "Shortlisted" : "Shortlist"}
         </Button>
@@ -182,5 +215,52 @@ function UsualCompanies({ onAdd }: { onAdd: (list: string[]) => void }) {
         <Button type="submit" variant="primary" disabled={!splitList(text).length}>Show blind spots</Button>
       </div>
     </form>
+  );
+}
+
+function Step({ n, ok, children }: { n: number; ok: boolean; children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className={cx("mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold", ok ? "bg-ok/20 text-ok" : "bg-warn/20 text-warn")}>{n}</span>
+      <span>{children}</span>
+    </li>
+  );
+}
+
+/** Why nobody is in the Blind-Spot list: each rule, with how many people survive it. */
+function BlindSpotWhy({ matches, prefs, name, onOpen }: {
+  matches: CandidateMatch[]; prefs: RecruiterPreferences; name: (id: string) => string; onOpen: (id: string) => void;
+}) {
+  const d = diagnoseBlindSpots(matches, prefs);
+  return (
+    <div className="mt-4 rounded-md border border-line p-4 text-sm">
+      <p className="font-medium">No one cleared all three Blind-Spot rules. Here is where people dropped out:</p>
+      <ol className="mt-3 space-y-2">
+        <Step n={1} ok={d.outside > 0}>
+          <b>{d.outside}</b> of {d.total} candidates work outside your usual companies.
+          {d.outside === 0 && " Everyone found is at a company on your list, so there is no one outside it. Widen the search or trim the list."}
+        </Step>
+        <Step n={2} ok={d.clearsScore > 0}>
+          <b>{d.clearsScore}</b> of those score {d.minScore} or more.
+        </Step>
+        <Step n={3} ok={d.clearsEvidence > 0}>
+          <b>{d.clearsEvidence}</b> of those have supported work evidence for at least {d.mustNeeded} of the {d.mustTotal} technical must-haves.
+          {d.clearsScore > 0 && d.clearsEvidence === 0 && (d.mustTotal >= 6 ? " With this many must-haves the bar is high: the brief may be asking for more than most profiles can show. Moving a few criteria to “nice to have” in Fine-tune lowers it." : "")}
+        </Step>
+      </ol>
+      {d.closest.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-medium text-muted">Closest outside your usual list</p>
+          <ul className="mt-1 space-y-1">
+            {d.closest.map((m) => (
+              <li key={m.candidateId} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                <button onClick={() => onOpen(m.candidateId)} className="font-medium underline-offset-4 hover:underline">{name(m.candidateId)}</button>
+                <span className="text-muted">score {m.score} · {m.mustSupported} of {m.mustTotal} must-haves supported (needs {Math.max(1, Math.ceil(m.mustTotal / 2))})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }

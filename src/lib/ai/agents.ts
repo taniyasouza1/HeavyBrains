@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AiEvidence, Briefing, Candidate, CandidateMatch, Company, Criterion, RecruiterPreferences, RoleCriteria } from "@/types";
+import type { AiEvidence, Briefing, ContentCheck, Candidate, CandidateMatch, Company, Criterion, RecruiterPreferences, RoleCriteria } from "@/types";
 import { assessCandidate } from "@/lib/discovery/ranking";
 import { slug } from "@/lib/utils/text";
 import type { Llm } from "./types";
@@ -79,7 +79,8 @@ Rules:
 - For each non-role criterion give 5 to 12 terms: the concept, its synonyms, abbreviations, and concrete evidence phrases a person would write in a role description ("requests per second", "p99", "sharding"). Lowercase, specific, 1 to 4 words. No generic words like "experience", "team" or "systems" alone.
 - Short or ambiguous tokens that are also common words or letters (Go, C, R, Rust as a word) belong in exactTerms (case-sensitive), not terms.
 - location: the place the person must be based, if stated. remote: true only if the brief says remote is acceptable. minYears: only if a number of years is stated. context: one sentence on the domain, if any.
-- At most 10 criteria. ${UNTRUSTED}`;
+- The brief may be a full job posting. Read only what describes the role: responsibilities, required skills and tools, seniority, years of experience, location. Ignore company marketing, benefits, culture, equal-opportunity and legal text, fraud warnings, and hashtags. Education requirements are not criteria. A years range ("2-4 years") sets minYears to its lower bound. A work-arrangement note ("hybrid, 2 days in the office") belongs in context, not location, unless a city or country is named.
+- At most 10 criteria; when the posting lists many tools, group the closely related ones into one criterion with all of them as terms. ${UNTRUSTED}`;
 
 export function sanitizeCriteria(raw: z.infer<typeof AnalystOut>): RoleCriteria {
   const used = new Set<string>();
@@ -89,8 +90,9 @@ export function sanitizeCriteria(raw: z.infer<typeof AnalystOut>): RoleCriteria 
     const terms = cleanList(c.terms, 14, 60, 3);
     const exactTerms = cleanList(c.exactTerms, 6, 30, 1);
     if (!label || (!terms.length && !exactTerms.length)) continue;
-    let id = slug(label), n = 2;
-    while (used.has(id)) id = `${slug(label)}-${n++}`;
+    const base = slug(label).slice(0, 70);
+    let id = base, n = 2;
+    while (used.has(id)) id = `${base}-${n++}`;
     used.add(id);
     criteria.push({ id, label, tier: c.tier, importance: c.importance, kind: c.kind, terms, ...(exactTerms.length ? { exactTerms } : {}) });
   }
@@ -102,11 +104,11 @@ export function sanitizeCriteria(raw: z.infer<typeof AnalystOut>): RoleCriteria 
   const years = raw.minYears != null && raw.minYears > 0 && raw.minYears <= 60 ? Math.round(raw.minYears) : undefined;
   return {
     roleTitle,
-    seniority: raw.seniority?.trim().toLowerCase() || undefined,
-    location: raw.location?.trim() || undefined,
+    seniority: raw.seniority?.trim().toLowerCase().slice(0, 40) || undefined,
+    location: raw.location?.trim().slice(0, 120) || undefined,
     remote: raw.remote || undefined,
     minYears: years,
-    context: raw.context?.trim() || undefined,
+    context: raw.context?.trim().slice(0, 500) || undefined,
     criteria,
   };
 }
@@ -318,4 +320,57 @@ export async function writeBriefing(
     user: `Role: ${criteria.roleTitle}. ${prefs.usualCompanies.length ? `The recruiter usually searches: ${prefs.usualCompanies.join(", ")}.` : "No usual companies were given, so no usual-versus-outside comparison exists."}\n\n${lines.join("\n\n")}`,
   });
   return verifyPickQuotes(sanitizeBriefing(out, new Set(top.map((m) => m.candidateId))), candidates);
+}
+
+/* ------------------------------------------------------ 5. Content Reviewer */
+
+export interface PostInput { text: string; datePosted?: string; url?: string }
+
+export const ContentOut = z.object({
+  verdict: z.enum(["builder", "mixed", "promotional", "insufficient"]),
+  summary: z.string(),
+  evidence: z.array(z.object({ postIndex: z.number(), quote: z.string(), why: z.string() })),
+});
+
+const CONTENT_SYSTEM = `You are the Content Reviewer on a recruiting team. You read a software professional's recent original LinkedIn posts and judge one thing: do the posts show someone who really builds and understands technical work, or mostly promotion and noise?
+
+Signs of a real builder: first-hand specifics (a concrete system, number, trade-off, failure or post-mortem), explaining how something works or why a decision was made, sharing original code, architecture or measured results, and honest limits ("this broke because...").
+Signs of promotion or noise: generic motivation, engagement bait, buzzword lists with no detail, announcements of hiring or events, resharing others' ideas without adding anything, claims with no substance behind them.
+
+Verdicts:
+- builder: several posts show first-hand technical substance.
+- mixed: some real technical substance alongside a lot of promotion.
+- promotional: the posts are mostly promotion or generic.
+- insufficient: fewer than 3 posts with enough content to judge. This is the right answer when in doubt; many strong engineers rarely post.
+
+Strict rules:
+- Judge technical substance only. Ignore writing style, English fluency, tone, politics, personal life, follower count and engagement numbers.
+- Every evidence item must quote the post exactly, character for character, in at most 240 characters, with postIndex set to that post's index. Never paraphrase. Evidence must back your verdict. For "promotional" cite examples of what made it promotional.
+- summary: one or two plain sentences. Do not speculate about the person beyond the posts.
+${UNTRUSTED}`;
+
+export function sanitizeContent(out: z.infer<typeof ContentOut>, posts: PostInput[], model: string): ContentCheck {
+  const evidence = out.evidence
+    .filter((e) => posts[e.postIndex] && quoteAppearsIn(e.quote, posts[e.postIndex].text))
+    .slice(0, 4)
+    .map((e) => ({ quote: squash(e.quote).slice(0, 260), why: squash(e.why).slice(0, 220), postUrl: posts[e.postIndex].url }));
+  // A positive verdict has to be backed by at least one quote that really is in the posts.
+  const unbacked = (out.verdict === "builder" || out.verdict === "mixed") && evidence.length === 0;
+  return {
+    verdict: unbacked ? "insufficient" : out.verdict,
+    summary: unbacked ? "The reviewer's examples could not be verified against the posts, so no judgement was made." : squash(out.summary).slice(0, 300),
+    evidence, postsReviewed: posts.length, checkedAt: new Date().toISOString(), model,
+  };
+}
+
+export async function reviewContent(llm: Llm, person: { name: string; headline?: string }, posts: PostInput[], model: string): Promise<ContentCheck> {
+  if (posts.length < 3) {
+    return { verdict: "insufficient", summary: `Only ${posts.length} original post${posts.length === 1 ? "" : "s"} found, which is too few to judge.`, evidence: [], postsReviewed: posts.length, checkedAt: new Date().toISOString(), model };
+  }
+  const body = posts.map((p, i) => `<profile id="${i}">\n${p.datePosted ? `date: ${p.datePosted.slice(0, 10)}\n` : ""}${squash(p.text).slice(0, 1800)}\n</profile>`).join("\n\n");
+  const out = await llm.call({
+    agent: "Content Reviewer", system: CONTENT_SYSTEM, schema: ContentOut, effort: "medium", maxTokens: 3000,
+    user: `Person: ${person.name}${person.headline ? ` (${person.headline})` : ""}\nEach <profile> below is one original post, numbered by id.\n\n${body}`,
+  });
+  return sanitizeContent(out, posts, model);
 }

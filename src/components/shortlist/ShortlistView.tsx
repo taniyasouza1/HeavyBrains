@@ -6,6 +6,7 @@ import { useApp } from "@/components/app-shell/AppProvider";
 import { Button, Chip, EmptyState, ScoreBar, inputCls } from "@/components/ui/primitives";
 import { shortlistToCsv } from "@/lib/export/csv";
 import { currentCompany } from "@/components/discovery/ResultsList";
+import { budgetFit, convert, money, rangeLabel } from "@/lib/pay/money";
 
 export function ShortlistView() {
   const { project, matches, candidates, stateOf, patchCandidate, select } = useApp();
@@ -14,6 +15,15 @@ export function ShortlistView() {
   const rows = ids
     .map((id) => ({ candidate: candidates.get(id)!, match: matches.find((m) => m.candidateId === id), state: stateOf(id) }))
     .sort((a, b) => (b.match?.score ?? 0) - (a.match?.score ?? 0));
+
+  const pay = project.result?.pay;
+  const fx = project.result?.fx;
+  const budget = project.preferences.budget;
+  const fits = rows.map((r) => budgetFit(pay?.[r.candidate.id], project.preferences, fx));
+  const withPay = rows.filter((r) => pay?.[r.candidate.id]);
+  const cur = budget?.currency ?? pay?.[withPay[0]?.candidate.id ?? ""]?.currency ?? "USD";
+  const mids = withPay.map((r) => convert(pay![r.candidate.id].mid, pay![r.candidate.id].currency, cur, fx));
+  const totalMid = mids.length && mids.every((x) => x != null) ? (mids as number[]).reduce((a, x) => a + x, 0) : undefined;
 
   const exportCsv = () => {
     const csv = shortlistToCsv(rows, project.criteria);
@@ -35,6 +45,17 @@ export function ShortlistView() {
         <Button variant="primary" onClick={exportCsv} disabled={rows.length === 0}><Download size={14} aria-hidden />Export CSV</Button>
       </div>
 
+      {withPay.length > 0 && (
+        <section aria-label="Budget summary" className="rounded-xl border border-line bg-panel p-4 text-sm">
+          <p className="font-medium">Estimated pay for this shortlist</p>
+          <p className="mt-1 text-muted">
+            {totalMid != null && <>At the middle of each range, {withPay.length} hire{withPay.length === 1 ? "" : "s"} would cost about <b className="text-ink">{money(totalMid, cur)}</b> a year. </>}
+            {budget?.max ? <>Against a budget of {money(budget.max, budget.currency)} each: {fits.filter((f) => f === "fits").length} fit, {fits.filter((f) => f === "stretch").length} stretch, {fits.filter((f) => f === "over").length} over, {rows.length - withPay.length} without an estimate.</> : <>Set a budget on the Discover page to see who fits.</>}
+          </p>
+          <p className="mt-1 text-[11px] text-muted">Market estimates for each role and place, not what these people earn.</p>
+        </section>
+      )}
+
       {rows.length === 0 ? (
         <EmptyState title="Your shortlist is empty" body="Add candidates from the Discover list, the Talent Map, or a candidate panel. Notes and follow-ups are saved with the project."
           action={<Link href="/discover"><Button>Go to Discover</Button></Link>} />
@@ -48,6 +69,7 @@ export function ShortlistView() {
                   <span className="block text-xs text-muted">{c.title ?? "Title not available"}{currentCompany(c) ? ` · ${currentCompany(c)}` : ""}</span>
                 </button>
                 <div className="flex items-center gap-3">
+                  {pay?.[c.id] && <Chip tone={fits[rows.findIndex((r) => r.candidate.id === c.id)] === "fits" ? "ok" : fits[rows.findIndex((r) => r.candidate.id === c.id)] === "stretch" ? "warn" : fits[rows.findIndex((r) => r.candidate.id === c.id)] === "over" ? "err" : "neutral"}>Est. {rangeLabel(pay[c.id], budget?.currency, fx)}</Chip>}
                   {m && <ScoreBar score={m.score} blind={m.blindSpot} />}
                   <Button size="sm" variant="ghost" onClick={() => patchCandidate(c.id, { shortlisted: false })} aria-label={`Remove ${c.name} from shortlist`}><X size={13} aria-hidden />Remove</Button>
                 </div>
