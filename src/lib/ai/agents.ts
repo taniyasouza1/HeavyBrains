@@ -286,8 +286,11 @@ export function sanitizeBriefing(out: z.infer<typeof BriefingOut>, validIds: Set
 }
 
 const quotedSegments = (s: string) => [...s.matchAll(/["\u201c]([^"\u201d]{12,})["\u201d]/g)].map((m) => m[1]);
-const profileCorpus = (c: Candidate) =>
+export interface ProfileText { headline?: string; summary?: string; skills: string[]; employment: { title?: string; description?: string }[] }
+/** Everything a person wrote about themselves, joined, for checking that a quote really comes from their profile. */
+export const corpusOf = (c: ProfileText) =>
   [c.headline, c.summary, c.skills.join(", "), ...c.employment.flatMap((e) => [e.title, e.description])].filter(Boolean).join("\n");
+const profileCorpus = (c: Candidate) => corpusOf(c);
 
 /** Swaps any internal candidate id the model let slip into prose for the person's name. */
 export function nameIds(text: string, candidates: Map<string, Candidate>): string {
@@ -383,4 +386,63 @@ export async function reviewContent(llm: Llm, person: { name: string; headline?:
     user: `Person: ${person.name}${person.headline ? ` (${person.headline})` : ""}\nEach <profile> below is one original post, numbered by id.\n\n${body}`,
   });
   return sanitizeContent(out, posts, model);
+}
+
+/* ------------------------------------------------------- 6. Outreach Writer */
+
+export const OutreachOut = z.object({ message: z.string() });
+
+export interface OutreachInput {
+  candidate: { name: string; title?: string; company?: string };
+  role: { title: string; location?: string };
+  /** Quotes already verified against the profile, with the criterion each one supports. */
+  evidence: { label: string; quote: string }[];
+  /** The profile text, used to check that anything the draft puts in quotation marks is real. */
+  profile: ProfileText;
+}
+
+const OUTREACH_SYSTEM = `You are the Outreach Writer on a recruiting team. You draft the FIRST message from a recruiter to a candidate. A human reads, edits and sends it; you never send anything.
+
+Write like a thoughtful person, not a template:
+- 60 to 110 words. Plain, warm, specific. No hype, no flattery ("impressive", "amazing", "rockstar"), no exclamation marks.
+- Open with one concrete thing from their work that made the recruiter look at them. Use at most two of the evidence quotes provided. If you put words in quotation marks, they must be copied exactly from a provided quote, character for character. You may also paraphrase a quote without quotation marks.
+- Name the role and say in one sentence why their work fits it. You know only the role's title and location: do not describe what the role involves, how much ownership or scope it offers, the team, the employer, or the pay. Do not claim to know the candidate's motivations or what they want.
+- Ask for one short call. Add one line that makes it easy to say no.
+- Use the literal placeholders [your name] and [your company] where the recruiter's own details belong. Never guess them.
+- Never mention internal ids, scores, "AI", or how the person was found.
+${UNTRUSTED}`;
+
+const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+/** Why a draft is unusable, or undefined when it is fine. */
+export function outreachProblem(message: string, profile: ProfileText): string | undefined {
+  const words = wordCount(message);
+  // The prompt asks for 60 to 110 words; the check allows a little either side so a good draft is not rejected for a few words.
+  if (words < 40 || words > 130) return `The message is ${words} words; keep it between 60 and 110.`;
+  const corpus = corpusOf(profile);
+  const bad = quotedSegments(message).find((q) => !quoteAppearsIn(q, corpus));
+  if (bad) return `The quoted text "${bad.slice(0, 80)}" does not appear in the candidate's profile. Quote only text from the provided quotes, exactly.`;
+  if (!/\[your name\]/i.test(message)) return "The message must end with the placeholder [your name].";
+  return undefined;
+}
+
+/** One draft, checked. If the first attempt breaks a rule the model is told which one and tries once more. */
+export async function draftOutreach(llm: Llm, input: OutreachInput): Promise<string> {
+  const quotes = input.evidence.map((e, i) => `${i + 1}. (${e.label}) "${squash(e.quote)}"`).join("\n");
+  const brief = `Candidate: ${input.candidate.name}${input.candidate.title ? `, ${input.candidate.title}` : ""}${input.candidate.company ? ` at ${input.candidate.company}` : ""}
+Role to fill: ${input.role.title}${input.role.location ? ` in ${input.role.location}` : ""}
+Evidence from their profile (the only facts you may use):
+${quotes}`;
+  let feedback = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const out = await llm.call({
+      agent: "Outreach Writer", system: OUTREACH_SYSTEM, schema: OutreachOut, effort: "low", maxTokens: 1500,
+      user: `${brief}${feedback ? `\n\nYour previous draft was rejected: ${feedback} Write a corrected draft.` : ""}`,
+    });
+    const message = out.message.trim();
+    const problem = outreachProblem(message, input.profile);
+    if (!problem) return message;
+    feedback = problem;
+  }
+  throw new Error("Could not write a draft whose quotes check out against the profile. Try again.");
 }

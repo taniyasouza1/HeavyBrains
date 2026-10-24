@@ -14,7 +14,7 @@ import { SignalsPanel } from "./SignalsPanel";
 import { budgetFit, rangeLabel } from "@/lib/pay/money";
 import type { Candidate, CandidateMatch, Company, CriterionAssessment, Criterion, Employment, FeedbackKind } from "@/types";
 
-type Tab = "overview" | "evidence" | "signals" | "pay" | "career" | "notes";
+type Tab = "overview" | "evidence" | "signals" | "pay" | "message" | "career" | "notes";
 
 const FEEDBACK: { v: FeedbackKind; label: string }[] = [
   { v: "relevant", label: "Relevant" }, { v: "not_relevant", label: "Not relevant" }, { v: "already_considered", label: "Already considered" },
@@ -72,6 +72,7 @@ function CandidateCard({ c, m }: { c: Candidate; m: CandidateMatch }) {
     { id: "evidence", label: "Evidence", badge: `${supported}/${m.assessments.length}` },
     { id: "signals", label: "Signals", badge: foundSignals ? String(foundSignals) : undefined },
     ...(project?.result?.pay && Object.keys(project.result.pay).length ? [{ id: "pay" as Tab, label: "Pay", badge: payEst ? rangeLabel(payEst, project.preferences.budget?.currency, project.result.fx) : undefined }] : []),
+    { id: "message", label: "Message", badge: st.draft ? "•" : undefined },
     { id: "career", label: "Career", badge: String(c.employment.length) },
     { id: "notes", label: "Notes", badge: st.notes || st.followUp || st.feedback ? "•" : undefined },
   ];
@@ -152,6 +153,7 @@ function CandidateCard({ c, m }: { c: Candidate; m: CandidateMatch }) {
               />
             )}
             {tab === "pay" && <PayPanel candidateId={c.id} />}
+            {tab === "message" && <Message c={c} m={m} crit={crit} />}
             {tab === "career" && <Career c={c} companyByName={companyByName} onCompany={(n) => select({ companyName: n })} />}
             {tab === "notes" && <Notes id={c.id} />}
           </motion.div>
@@ -329,6 +331,77 @@ function CareerItem({ e, company, onCompany }: { e: Employment; company?: Compan
         </>
       )}
     </li>
+  );
+}
+
+/* ------------------------------------------------------------------- Message */
+
+function Message({ c, m, crit }: { c: Candidate; m: CandidateMatch; crit: Map<string, Criterion> }) {
+  const { project, status, stateOf, patchCandidate } = useApp();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const draft = stateOf(c.id).draft ?? "";
+  // The facts the message may use: the strongest quoted evidence, role-level matches last since they say least.
+  const generic = (a: CriterionAssessment) => (["role", "seniority"].includes(crit.get(a.criterionId)?.kind ?? "") ? 1 : 0);
+  const evidence = [...m.assessments]
+    .filter((a) => a.status === "supported" && a.evidence[0]?.quote)
+    .sort((a, b) => generic(a) - generic(b))
+    .slice(0, 3)
+    .map((a) => ({ label: crit.get(a.criterionId)?.label ?? "Criterion", quote: a.evidence[0].quote! }));
+
+  const write = async () => {
+    if (!project) return;
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch("/api/outreach", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          candidate: {
+            name: c.name, title: c.title, company: c.employment.find((e) => e.current)?.company, headline: c.headline, summary: c.summary, skills: c.skills,
+            employment: c.employment.map((e) => ({ title: e.title, description: e.description })),
+          },
+          role: { title: project.criteria.roleTitle || "this role", location: project.criteria.location },
+          evidence,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.message) setError(j.error ?? `Request failed (${res.status}).`);
+      else patchCandidate(c.id, { draft: j.message });
+    } catch {
+      setError("Could not reach the HeavyBrains server.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!status?.aiConfigured) return <p className="text-[15px] text-muted">Drafting a message needs an Anthropic key (ANTHROPIC_API_KEY in .env).</p>;
+  if (!evidence.length) return <p className="text-[15px] text-muted">There is no supported, quoted evidence for this person yet, so there is nothing solid to open a message with.</p>;
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted">A first message that opens with their real work. It is only a draft: the app never sends anything.</p>
+      {!draft && (
+        <Button variant="primary" onClick={() => void write()} disabled={busy}>{busy ? "Writing…" : "Draft first message"}</Button>
+      )}
+      {typeof error === "string" && <p role="alert" className="text-sm text-warn">{error}</p>}
+      {draft && (
+        <>
+          <textarea
+            aria-label="Draft message" rows={11} value={draft} onChange={(e) => patchCandidate(c.id, { draft: e.target.value })}
+            className={cx(inputCls, "!text-[15px] leading-relaxed")}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" onClick={() => { void navigator.clipboard.writeText(draft); setCopied(true); setTimeout(() => setCopied(false), 1800); }}>{copied ? "Copied" : "Copy message"}</Button>
+            <Button variant="outline" onClick={() => void write()} disabled={busy}>{busy ? "Writing…" : "Write another"}</Button>
+          </div>
+          <ul className="list-disc space-y-1 pl-5 text-xs text-muted">
+            <li>Never sent. Any words in quotation marks were checked against their profile.</li>
+            <li>Replace <b>[your name]</b> and <b>[your company]</b> before sending.</li>
+            <li>It cites only: {evidence.map((e) => e.label).join(", ")}.</li>
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 

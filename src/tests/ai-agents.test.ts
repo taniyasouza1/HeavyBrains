@@ -3,7 +3,7 @@ import type { z } from "zod";
 
 vi.mock("server-only", () => ({}));
 
-import { nameIds, quoteAppearsIn, reviewCandidates, reviewContent, sanitizeBriefing, sanitizeContent, sanitizeCriteria, verifyPickQuotes, AnalystOut } from "@/lib/ai/agents";
+import { draftOutreach, nameIds, outreachProblem, quoteAppearsIn, reviewCandidates, reviewContent, sanitizeBriefing, sanitizeContent, sanitizeCriteria, verifyPickQuotes, AnalystOut } from "@/lib/ai/agents";
 import { AgentError, type Llm } from "@/lib/ai/types";
 import { assessCandidate } from "@/lib/discovery/ranking";
 import { runDiscovery, DiscoveryError } from "@/lib/discovery/service";
@@ -236,5 +236,36 @@ describe("content review", () => {
     const c = await reviewContent(llm, { name: "P" }, posts.slice(0, 2), "m");
     expect(c.verdict).toBe("insufficient");
     expect(llm.calls).toEqual([]);
+  });
+});
+
+describe("draftOutreach", () => {
+  const profile = { headline: "Backend engineer", skills: ["Go"], employment: [{ title: "Senior Backend Engineer", description: "Led the authorisation service rewrite in Java, sustaining 40,000 transactions per second at peak." }] };
+  const input = { candidate: { name: "Mara", title: "Senior Backend Engineer", company: "Northwind Pay" }, role: { title: "Founding Backend Engineer", location: "Bengaluru" }, profile, evidence: [{ label: "High-throughput services", quote: "Led the authorisation service rewrite in Java, sustaining 40,000 transactions per second at peak." }] };
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
+  const good = `Hi Mara, I came across your work where you "sustaining 40,000 transactions per second at peak" on the authorisation service. We are hiring a Founding Backend Engineer in Bengaluru and that scale of payments work is exactly what the role needs. Would you be open to a short call this week? If the timing is off, no worries at all. ${words(12)} [your name], [your company]`;
+
+  it("returns a draft whose quotes are in the profile and that keeps the placeholders", async () => {
+    const llm = fakeLlm({ "Outreach Writer": () => ({ message: good }) });
+    expect(await draftOutreach(llm, input)).toBe(good);
+    expect(llm.calls).toEqual(["Outreach Writer"]);
+  });
+  it("tells the model what was wrong and tries once more when a quote is not in the profile", async () => {
+    const sent: string[] = [];
+    let n = 0;
+    const llm = fakeLlm({ "Outreach Writer": (a) => { sent.push(a.user); return { message: n++ === 0 ? good.replace("sustaining 40,000 transactions per second at peak", "built the entire Kubernetes control plane for Visa") : good }; } });
+    expect(await draftOutreach(llm, input)).toBe(good);
+    expect(llm.calls).toHaveLength(2);
+    expect(sent[1]).toMatch(/was rejected.*does not appear in the candidate's profile/);
+  });
+  it("gives up with a clear error when the model keeps citing things that are not there", async () => {
+    const bad = good.replace("sustaining 40,000 transactions per second at peak", "founded a unicorn in 2019");
+    await expect(draftOutreach(fakeLlm({ "Outreach Writer": () => ({ message: bad }) }), input)).rejects.toThrow(/quotes check out/);
+  });
+  it("rejects a draft that is far too long, or has lost the sender placeholder", () => {
+    expect(outreachProblem(words(300) + " [your name]", profile)).toMatch(/words/);
+    expect(outreachProblem(words(125) + " [your name]", profile)).toBeUndefined(); // a little over the target is fine
+    expect(outreachProblem(words(80), profile)).toMatch(/\[your name\]/);
+    expect(outreachProblem(`${words(80)} [your name]`, profile)).toBeUndefined();
   });
 });

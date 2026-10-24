@@ -269,6 +269,8 @@ export interface CandidateState {
   notes: string;
   followUp: string;
   feedback?: FeedbackKind;
+  /** A drafted first message. Never sent by the app. */
+  draft?: string;
 }
 
 export interface SourcingProject {
