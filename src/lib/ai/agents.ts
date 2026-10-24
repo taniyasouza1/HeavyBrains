@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AiEvidence, Briefing, ContentCheck, Candidate, CandidateMatch, Company, Criterion, RecruiterPreferences, RoleCriteria } from "@/types";
 import { assessCandidate } from "@/lib/discovery/ranking";
-import { slug } from "@/lib/utils/text";
+import { normalizeName, slug } from "@/lib/utils/text";
 import type { Llm } from "./types";
 
 /* ------------------------------------------------------------------ helpers */
@@ -273,14 +273,24 @@ Rules:
 - headline: one plain sentence on what the search found, including how many strong candidates stand out.
 - picks: up to 5 candidates, best first, each with a reason of at most two sentences that names the specific evidence (quote a few words). If a candidate is flagged "outside your usual pool", say so and why that matters.
 - caveats: up to 3 short notes on what the data cannot tell (unknown criteria, thin profiles, self-reported claims).
-- Refer to people by name only. Never write the internal ids shown in the profile tags.
+- In the headline, reasons and caveats, refer to people by name only and never write the internal ids from the profile tags. The one exception is each pick's candidateId field, which must be the exact id from that candidate's profile tag.
 - The headline's counts must match what you list: do not state a total you cannot see.
 - Plain language, no hype, no superlatives. Scores are role-relevance estimates, not a measure of ability. ${UNTRUSTED}`;
 
-export function sanitizeBriefing(out: z.infer<typeof BriefingOut>, validIds: Set<string>): Briefing {
+/**
+ * `byName` lets a pick that names the person instead of giving their id still resolve: the model is told never to write ids in prose,
+ * and a pick that is dropped for that reason would leave the briefing empty.
+ */
+export function sanitizeBriefing(out: z.infer<typeof BriefingOut>, validIds: Set<string>, byName?: Map<string, string>): Briefing {
+  const resolve = (x: string) => (validIds.has(x) ? x : byName?.get(normalizeName(x)));
+  const seen = new Set<string>();
   return {
     headline: squash(out.headline).slice(0, 220),
-    picks: out.picks.filter((p) => validIds.has(p.candidateId)).slice(0, 5).map((p) => ({ candidateId: p.candidateId, reason: squash(p.reason).slice(0, 320) })),
+    picks: out.picks
+      .map((p) => ({ id: resolve(p.candidateId), reason: p.reason }))
+      .filter((p): p is { id: string; reason: string } => !!p.id && !seen.has(p.id) && !!seen.add(p.id))
+      .slice(0, 5)
+      .map((p) => ({ candidateId: p.id, reason: squash(p.reason).slice(0, 320) })),
     caveats: cleanList(out.caveats, 3, 220, 3),
   };
 }
@@ -331,7 +341,8 @@ export async function writeBriefing(
     agent: "Briefing Writer", system: BRIEFING_SYSTEM, schema: BriefingOut, effort: "low", maxTokens: 3000,
     user: `Role: ${criteria.roleTitle}. ${prefs.usualCompanies.length ? `The recruiter usually searches: ${prefs.usualCompanies.join(", ")}.` : "No usual companies were given, so no usual-versus-outside comparison exists."}\n\n${lines.join("\n\n")}`,
   });
-  const b = verifyPickQuotes(sanitizeBriefing(out, new Set(top.map((m) => m.candidateId))), candidates);
+  const byName = new Map(top.map((m) => [normalizeName(candidates.get(m.candidateId)!.name), m.candidateId]));
+  const b = verifyPickQuotes(sanitizeBriefing(out, new Set(top.map((m) => m.candidateId)), byName), candidates);
   return { headline: nameIds(b.headline, candidates), picks: b.picks.map((p) => ({ ...p, reason: nameIds(p.reason, candidates) })), caveats: b.caveats.map((x) => nameIds(x, candidates)) };
 }
 

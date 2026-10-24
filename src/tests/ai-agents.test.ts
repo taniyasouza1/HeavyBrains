@@ -86,6 +86,17 @@ describe("sanitizeBriefing", () => {
   });
 });
 
+describe("sanitizeBriefing resolves picks the model identified by name", () => {
+  it("keeps a pick whose candidateId is the person's name, and does not list one person twice", () => {
+    const byName = new Map([["mara ellison", "cd-1"], ["isla fernandes", "cd-2"]]);
+    const b = sanitizeBriefing(
+      { headline: "h", caveats: [], picks: [{ candidateId: "Mara Ellison", reason: "Fits." }, { candidateId: "cd-1", reason: "Again." }, { candidateId: "isla fernandes", reason: "Also." }, { candidateId: "Nobody", reason: "x" }] },
+      new Set(["cd-1", "cd-2"]), byName,
+    );
+    expect(b.picks).toEqual([{ candidateId: "cd-1", reason: "Fits." }, { candidateId: "cd-2", reason: "Also." }]);
+  });
+});
+
 describe("nameIds", () => {
   it("replaces leaked internal ids with names, longest id first", () => {
     const m = new Map([["cd-2", { id: "cd-2", name: "Ann" }], ["cd-22", { id: "cd-22", name: "Bo" }]] as never);

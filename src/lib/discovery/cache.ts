@@ -9,7 +9,7 @@ import type { DiscoveryResult } from "@/types";
  * Bump CACHE_VERSION whenever the pipeline changes in a way that makes old results wrong.
  * The folder is git-ignored: it holds public profile data and nothing else.
  */
-export const CACHE_VERSION = 2;
+export const CACHE_VERSION = 3;
 export const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_FILES = 100;
 
