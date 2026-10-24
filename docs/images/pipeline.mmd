@@ -1,0 +1,19 @@
+---
+config:
+  flowchart:
+    nodeSpacing: 28
+    rankSpacing: 34
+---
+flowchart LR
+    brief(["Hiring brief"]) --> a1["<b>Brief Analyst</b><br/>brief to criteria"]:::agent
+    a1 --> a2["<b>Search Strategist</b><br/>wider titles"]:::agent
+    a2 --> ret["<b>Crustdata</b><br/>person + company<br/>search"]:::tool
+    ret --> enr["<b>Enrich top 10</b><br/>Crustdata + GitHub"]:::tool
+    enr --> a3["<b>Evidence Reviewers</b><br/>in parallel"]:::agent
+    a3 --> g{{"Quote guard<br/>verbatim or dropped"}}:::guard
+    g --> a4["<b>Briefing Writer</b><br/>five picks"]:::agent
+    a4 --> out(["Ranked people,<br/>a quote behind<br/>every score"])
+
+    classDef agent fill:#1f3a8a,stroke:#1e3a8a,color:#ffffff
+    classDef tool fill:#b45309,stroke:#92400e,color:#ffffff
+    classDef guard fill:#166534,stroke:#14532d,color:#ffffff

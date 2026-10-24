@@ -387,7 +387,7 @@ function Message({ c, m, crit }: { c: Candidate; m: CandidateMatch; crit: Map<st
       {draft && (
         <>
           <textarea
-            aria-label="Draft message" rows={11} value={draft} onChange={(e) => patchCandidate(c.id, { draft: e.target.value })}
+            aria-label="Draft message" rows={17} value={draft} onChange={(e) => patchCandidate(c.id, { draft: e.target.value })}
             className={cx(inputCls, "!text-[15px] leading-relaxed")}
           />
           <div className="flex flex-wrap items-center gap-2">
