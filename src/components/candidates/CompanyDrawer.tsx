@@ -16,7 +16,7 @@ export function CompanyDrawer() {
   return (
     <Drawer title={`Company ${name}`} onClose={() => select({})}>
       <div className="space-y-5 p-5 pt-4">
-        <header className="pr-8">
+        <header className="pr-12">
           <h2 className="text-lg font-semibold tracking-tight">{company?.name ?? name}</h2>
           <p className="text-sm text-muted">{[company?.industry, company?.location].filter(Boolean).join(" · ") || "Industry and location not available"}</p>
           {company?.website && (company.source === "demo"

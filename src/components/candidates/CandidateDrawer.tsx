@@ -79,7 +79,7 @@ function CandidateCard({ c, m }: { c: Candidate; m: CandidateMatch }) {
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-10 border-b border-line bg-panel/95 px-6 pb-2 pt-4 backdrop-blur-xl">
-        <div className="flex items-start gap-4 pr-8">
+        <div className="flex items-start gap-4 pr-12">
           <span aria-hidden className="mt-1 flex size-14 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-[#1c2142]" style={{ background: avatarColor(c.name) }}>{initials(c.name)}</span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
