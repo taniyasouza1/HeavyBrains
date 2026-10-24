@@ -5,22 +5,11 @@ import { useApp } from "@/components/app-shell/AppProvider";
 import { Button, Section } from "@/components/ui/primitives";
 
 export function RunPanel() {
-  const { project, run, runDiscovery, setMode, status } = useApp();
+  const { project, run, runDiscovery, setMode } = useApp();
   if (!project) return null;
   const live = project.mode === "live";
-  const blocked = live && status && !status.liveConfigured;
   return (
-    <Section title="Run discovery">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="primary" onClick={() => void runDiscovery()} disabled={run.phase === "running" || !!blocked}>
-          {run.phase === "running" && <Loader2 size={14} className="animate-spin" aria-hidden />}
-          {run.phase === "running" ? "Running…" : project.result ? "Re-run discovery" : "Run discovery"}
-        </Button>
-        <p className="text-xs text-muted">
-          {live ? "Queries Crustdata /person/search (and /company/search for employer profiles) from the server. Rate limit 30 req/min; limited to 100 profiles." : "Loads the fictional demo dataset through the same ranking pipeline."}
-        </p>
-      </div>
-
+    <Section title="Search progress">
       <div aria-live="polite" className="mt-3 space-y-1.5">
         {(run.phase === "running" || run.phase === "done") && (
           <ul className="space-y-1 text-sm">

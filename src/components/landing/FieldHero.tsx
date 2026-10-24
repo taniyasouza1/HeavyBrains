@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { motion, useReducedMotion, useScroll, useTransform } from "motion/react";
-import { IconArrowRight as ArrowRight, IconMapPin as MapPin } from "@tabler/icons-react";
+import { IconArrowRight as ArrowRight } from "@tabler/icons-react";
 import { useApp } from "@/components/app-shell/AppProvider";
 import { parseRoleDescription } from "@/lib/discovery/criteria";
 import { FIELDS, type Field } from "@/lib/fields";
+import { AUTORUN_KEY } from "@/lib/autorun";
 import { Pendant } from "./Pendant";
 
 const FieldScene = dynamic(() => import("./FieldScene"), { ssr: false });
@@ -31,8 +32,6 @@ export function FieldHero({ field }: { field: Field }) {
   const { hydrated, update } = useApp();
   const still = !!useReducedMotion();
   const [brief, setBrief] = useState(field.brief);
-  const [location, setLocation] = useState("");
-  const [years, setYears] = useState("");
   const ref = useRef<HTMLElement>(null);
   const p = useScroll({ target: ref, offset: ["start start", "end start"] }).scrollYProgress;
   const objectY = useTransform(p, [0, 1], [0, -110]);
@@ -41,11 +40,9 @@ export function FieldHero({ field }: { field: Field }) {
   const start = (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = parseRoleDescription(brief);
-    const n = Number(years);
-    update((proj) => ({
-      ...proj, roleDescription: brief,
-      criteria: { ...parsed, location: location.trim() || parsed.location, minYears: n > 0 ? n : parsed.minYears },
-    }));
+    update((proj) => ({ ...proj, roleDescription: brief, criteria: parsed }));
+    // The workspace reads this once and starts the search, so the visitor lands on results instead of more forms.
+    sessionStorage.setItem(AUTORUN_KEY, "1");
     router.push("/discover");
   };
 
@@ -76,33 +73,21 @@ export function FieldHero({ field }: { field: Field }) {
             </motion.h1>
             <p className="mt-4 max-w-lg text-lg leading-snug text-[#b6bee3]">{field.sub}</p>
 
-            <form onSubmit={start} className="mt-9 grid gap-x-4 gap-y-5 sm:grid-cols-[1fr_8.5rem]">
-              <FormField label="Where should they be based?">
-                <div className="flex h-12 items-center gap-2.5 px-4">
-                  <MapPin size={18} aria-hidden className="shrink-0 text-[#6f7ab0]" />
-                  <input id="loc" aria-label="Location" className={bare} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="City, country or remote" />
-                </div>
-              </FormField>
-              <FormField label="Experience">
-                <div className="flex h-12 items-center gap-2 px-4">
-                  <input id="yrs" aria-label="Minimum years of experience" className={`${bare} tabular-nums`} value={years} onChange={(e) => setYears(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" placeholder="5" />
-                  <span className="shrink-0 text-[15px] text-[#6f7ab0]">+ years</span>
-                </div>
-              </FormField>
+            <form onSubmit={start} className="mt-9 space-y-5">
               <FormField
-                className="sm:col-span-2" label="The role, in your own words"
+                label="Describe the person you need"
                 aside={brief !== field.brief && <button type="button" onClick={() => setBrief(field.brief)} className="text-[13px] text-[#f2b50f] underline-offset-4 hover:underline">Use the example</button>}
               >
-                <textarea aria-label="Describe the role" className={`${bare} block resize-none px-4 py-3.5 text-base leading-relaxed`} rows={4} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="Describe the person you need" />
+                <textarea aria-label="Describe the role" className={`${bare} block resize-none px-4 py-3.5 text-base leading-relaxed`} rows={4} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="Role, must-have experience, location if it matters" />
               </FormField>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-3 sm:col-span-2">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
                 <button
                   type="submit" disabled={!hydrated || !brief.trim()}
                   className="group inline-flex h-14 items-center gap-2.5 rounded-xl border-b-2 border-[#d29500] bg-gradient-to-b from-[#fbc72d] to-[#f9b407] px-8 text-lg font-medium text-[#1c2142] transition-[transform,filter] hover:brightness-105 active:translate-y-px disabled:opacity-50"
                 >
-                  Get started<ArrowRight size={18} aria-hidden className="transition-transform group-hover:translate-x-1" />
+                  Find people<ArrowRight size={18} aria-hidden className="transition-transform group-hover:translate-x-1" />
                 </button>
-                <p className="max-w-[15rem] text-sm leading-snug text-[#8f99c7]">Opens the workspace with the criteria pulled from this brief.</p>
+                <p className="max-w-[16rem] text-sm leading-snug text-[#8f99c7]">We read your brief and run the search. You can adjust everything on the next screen.</p>
               </div>
             </form>
           </div>

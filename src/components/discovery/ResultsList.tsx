@@ -6,6 +6,7 @@ import { IconArrowDown as ArrowDown, IconArrowUp as ArrowUp, IconCompass as Comp
 import { useApp } from "@/components/app-shell/AppProvider";
 import { Button, Chip, EmptyState, ScoreBar, Section, Segmented, Skeleton, cx, inputCls, selectCls } from "@/components/ui/primitives";
 import { filterByView } from "@/lib/discovery/analysis";
+import { splitList } from "@/lib/utils/text";
 import type { Candidate, CandidateMatch, PoolView } from "@/types";
 
 type Sort = "score" | "name" | "company";
@@ -15,7 +16,7 @@ export function currentCompany(c: Candidate) {
 }
 
 export function ResultsList() {
-  const { project, matches, candidates, view, setView, showExcluded, setShowExcluded, run, select, selection, stateOf, patchCandidate, rankDelta } = useApp();
+  const { project, update, matches, candidates, view, setView, showExcluded, setShowExcluded, run, select, selection, stateOf, patchCandidate, rankDelta } = useApp();
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("score");
   const [must, setMust] = useState("");
@@ -99,14 +100,16 @@ export function ResultsList() {
       </div>
 
       {view === "blindspot" && (
-        <p className="mt-3 rounded-md border border-blind/30 bg-blind/5 p-3 text-xs text-ink/90">
-          {blindUnavailable
-            ? "Add the companies you usually search (under “Your usual sourcing”) to enable this comparison. Without a usual list there is no “outside” to compare against."
-            : "Candidates here work outside your usual company list, show supported work evidence for at least half of the technical must-haves (a matching job title does not count), and clear a minimum score. Being at an unfamiliar company is not itself a reason to look — the evidence is."}
-        </p>
+        blindUnavailable ? (
+          <UsualCompanies onAdd={(list) => update((p) => ({ ...p, preferences: { ...p.preferences, usualCompanies: list } }))} />
+        ) : (
+          <p className="mt-3 rounded-md border border-blind/30 bg-blind/5 p-3 text-xs text-ink/90">
+            Candidates here work outside your usual company list, show supported work evidence for at least half of the technical must-haves (a matching job title does not count), and clear a minimum score. Being at an unfamiliar company is not itself a reason to look — the evidence is.
+          </p>
+        )
       )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && view === "blindspot" && blindUnavailable ? null : rows.length === 0 ? (
         <div className="mt-4">
           <EmptyState
             title={view === "blindspot" && !blindUnavailable ? "No blind-spot candidates in this pool" : "No candidates match these filters"}
@@ -160,5 +163,23 @@ function Row({ i, m, c, selected, shortlisted, delta, feedback, onOpen, onToggle
         </Button>
       </div>
     </motion.li>
+  );
+}
+
+/** The one extra input the Blind-Spot Finder needs, asked for at the moment it matters. */
+function UsualCompanies({ onAdd }: { onAdd: (list: string[]) => void }) {
+  const [text, setText] = useState("");
+  return (
+    <form
+      className="mt-3 rounded-md border border-blind/30 bg-blind/5 p-3"
+      onSubmit={(e) => { e.preventDefault(); const list = splitList(text); if (list.length) onAdd(list); }}
+    >
+      <label htmlFor="usual" className="text-sm font-medium">Which companies do you usually search?</label>
+      <p className="mt-0.5 text-xs text-muted">Blind spots are people outside this list, so we need it to show who you are missing.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <input id="usual" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Northwind Pay, Halcyon Bank" className={cx(inputCls, "max-w-md flex-1")} />
+        <Button type="submit" variant="primary" disabled={!splitList(text).length}>Show blind spots</Button>
+      </div>
+    </form>
   );
 }

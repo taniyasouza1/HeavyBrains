@@ -1,12 +1,12 @@
 "use client";
 
-import { IconWand as Wand2 } from "@tabler/icons-react";
+import { IconSearch as Search } from "@tabler/icons-react";
 import { useApp } from "@/components/app-shell/AppProvider";
 import { Button, Section, inputCls } from "@/components/ui/primitives";
 import { parseRoleDescription } from "@/lib/discovery/criteria";
 import { DEMO_ROLE_TEXT, DEMO_USUAL_COMPANIES } from "@/lib/demo/dataset";
 
-export function RoleBrief() {
+export function RoleBrief({ onFind }: { onFind: () => void }) {
   const { project, update, setMode } = useApp();
   if (!project) return null;
   const extract = () =>
@@ -43,8 +43,8 @@ export function RoleBrief() {
         placeholder="e.g. I need a senior backend engineer for a high-throughput payments platform. They should have experience with distributed systems, database performance and reliability. Java or Go is useful, but the systems they've worked on matter more than the company name."
       />
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <Button onClick={extract} disabled={!project.roleDescription.trim()}><Wand2 size={14} aria-hidden /> Extract criteria</Button>
-        <p className="text-xs text-muted">Deterministic extraction — no LLM involved. Review and edit the criteria below before running discovery.</p>
+        <Button variant="primary" onClick={() => { extract(); onFind(); }} disabled={!project.roleDescription.trim()}><Search size={14} aria-hidden /> Find people</Button>
+        <p className="text-xs text-muted">Criteria are read from your brief with fixed rules (no LLM). Fine-tune them below if you like.</p>
       </div>
     </Section>
   );
