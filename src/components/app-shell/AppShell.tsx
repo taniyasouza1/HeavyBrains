@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { motion } from "motion/react";
 import { usePathname } from "next/navigation";
 import { IconCompass as Compass, IconLayoutKanban as FolderKanban, IconHierarchy2 as Network, IconStar as Star } from "@tabler/icons-react";
 import { useApp } from "./AppProvider";
@@ -17,6 +18,12 @@ const NAV = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  // The landing and field pages are full-bleed with their own chrome.
+  if (pathname === "/" || pathname.startsWith("/fields")) return <>{children}</>;
+  return <Workspace pathname={pathname}>{children}</Workspace>;
+}
+
+function Workspace({ pathname, children }: { pathname: string; children: React.ReactNode }) {
   const { hydrated, project, status, setMode, run, runDiscovery, selection, update } = useApp();
   const shortlistCount = project ? Object.values(project.candidateState).filter((s) => s.shortlisted).length : 0;
   const resultMode = project?.result?.mode;
@@ -25,9 +32,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <aside className="flex shrink-0 items-center gap-1 border-b border-line bg-panel px-3 py-2 md:w-52 md:flex-col md:items-stretch md:border-b-0 md:border-r md:px-3 md:py-4">
-        <Link href="/discover" className="mr-3 flex items-baseline gap-1 px-2 md:mb-5 md:mr-0">
-          <span className="text-base font-semibold tracking-tight">Heavy Brains</span>
+      <aside className="flex shrink-0 items-center gap-1 border-b border-line bg-panel/70 backdrop-blur-xl px-3 py-2 md:sticky md:top-0 md:h-screen md:w-56 md:flex-col md:items-stretch md:border-b-0 md:border-r md:px-3 md:py-4">
+        <Link href="/" className="group mr-3 flex items-center gap-2 px-2 md:mb-6 md:mr-0" aria-label="Heavy Brains home">
+          <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden className="shrink-0 transition-transform duration-500 group-hover:rotate-[60deg]">
+            <circle cx="9" cy="11" r="4" fill="var(--text)" opacity=".85" /><circle cx="5" cy="6" r="1.6" fill="var(--muted)" /><circle cx="6" cy="17" r="1.4" fill="var(--muted)" />
+            <circle cx="16" cy="5" r="2.2" fill="var(--blind)" />
+          </svg>
+          <span className="font-display text-lg font-extrabold tracking-tight">Heavy Brains</span>
         </Link>
         <nav aria-label="Primary" className="flex flex-1 gap-1 md:flex-none md:flex-col">
           {NAV.map(({ href, label, icon: Icon }) => {
@@ -35,20 +46,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             return (
               <Link
                 key={href} href={href} aria-current={active ? "page" : undefined}
-                className={cx("flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors", active ? "bg-panel2 text-ink" : "text-muted hover:bg-panel2/60 hover:text-ink")}
+                className={cx("relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors", active ? "text-ink" : "text-muted hover:text-ink")}
               >
-                <Icon size={15} aria-hidden />
-                <span>{label}</span>
+                {active && <motion.span layoutId="nav-pill" transition={{ type: "spring", stiffness: 420, damping: 36 }} className="absolute inset-0 rounded-lg bg-panel2 ring-1 ring-line" />}
+                {active && <motion.span layoutId="nav-dot" className="absolute -left-3 top-1/2 hidden h-4 w-1 -translate-y-1/2 rounded-full bg-accent shadow-[0_0_12px_var(--accent)] md:block" />}
+                <Icon size={15} aria-hidden className="relative" />
+                <span className="relative">{label}</span>
                 {href === "/shortlist" && shortlistCount > 0 && <span className="ml-auto text-xs tabular-nums text-accent">{shortlistCount}</span>}
               </Link>
             );
           })}
         </nav>
-        <p className="hidden px-2 pt-6 text-[11px] leading-snug text-muted md:block">Find the talent your usual search misses.</p>
+        <p className="font-display hidden px-2 pt-6 text-sm font-semibold leading-snug tracking-tight text-muted md:block">Find the talent your usual search <span className="text-blind">misses</span>.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-bg px-4 py-2.5 md:px-6">
+        <header className="sticky top-0 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-bg/70 px-4 py-2.5 backdrop-blur-xl md:px-6">
           <div className="min-w-0 flex-1">
             {project ? (
               <input
@@ -96,7 +109,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Demo mode: all people and companies are fictional.
           </div>
         )}
-        <main className="min-w-0 flex-1 px-4 py-5 md:px-6">{hydrated ? children : <div className="skeleton h-40" />}</main>
+        <main className="min-w-0 flex-1 px-4 py-5 md:px-6">
+          {hydrated ? (
+            <motion.div key={pathname} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}>{children}</motion.div>
+          ) : <div className="skeleton h-40" />}
+        </main>
       </div>
 
       {selection.candidateId && <CandidateDrawer />}

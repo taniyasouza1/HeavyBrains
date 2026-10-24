@@ -13,7 +13,7 @@ export function ProjectsView() {
     <div className="mx-auto max-w-[900px] space-y-5">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Projects</h1>
+          <h1 className="font-display text-4xl font-extrabold tracking-tight md:text-5xl">Projects</h1>
           <p className="text-sm text-muted">Saved in this browser (local storage). Criteria, preferences, results, shortlist and notes are kept per project.</p>
         </div>
         <Button variant="primary" onClick={() => { createProject(); router.push("/discover"); }}><Plus size={14} aria-hidden />New project</Button>

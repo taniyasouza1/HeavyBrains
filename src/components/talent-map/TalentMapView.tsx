@@ -15,7 +15,7 @@ export function TalentMapView() {
     <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Talent Map</h1>
+          <h1 className="font-display text-4xl font-extrabold tracking-tight md:text-5xl">Talent Map</h1>
           <p className="text-sm text-muted">Role → requirements → people → employers, drawn only from relationships present in the retrieved data.</p>
         </div>
         <Segmented<"map" | "compare"> label="Map section" value={tab} onChange={setTab} options={[{ value: "map", label: "Map" }, { value: "compare", label: "Compare companies" }]} />

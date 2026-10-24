@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { IconX as X } from "@tabler/icons-react";
+import { motion } from "motion/react";
 
 export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -15,13 +16,14 @@ export function Drawer({ title, onClose, children }: { title: string; onClose: (
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={onClose} aria-hidden />
-      <aside
+      <motion.aside
         ref={ref} tabIndex={-1} role="dialog" aria-label={title}
-        className="anim-slide fixed inset-y-0 right-0 z-40 flex w-full max-w-[540px] flex-col border-l border-line bg-panel shadow-2xl shadow-black/50 focus:outline-none"
+        initial={{ x: 48, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ type: "spring", stiffness: 380, damping: 36 }}
+        className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[540px] flex-col border-l border-line bg-panel/95 backdrop-blur-xl shadow-2xl shadow-black/60 focus:outline-none"
       >
         <button onClick={onClose} aria-label="Close panel" className="absolute right-3 top-3 z-10 rounded p-1.5 text-muted hover:bg-panel2 hover:text-ink"><X size={16} /></button>
         <div className="flex-1 overflow-y-auto">{children}</div>
-      </aside>
+      </motion.aside>
     </>
   );
 }

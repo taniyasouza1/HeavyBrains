@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { motion } from "motion/react";
 import { IconArrowDown as ArrowDown, IconArrowUp as ArrowUp, IconCompass as Compass, IconStar as Star } from "@tabler/icons-react";
 import { useApp } from "@/components/app-shell/AppProvider";
 import { Button, Chip, EmptyState, ScoreBar, Section, Segmented, Skeleton, cx, inputCls, selectCls } from "@/components/ui/primitives";
@@ -115,7 +116,7 @@ export function ResultsList() {
         </div>
       ) : (
         <ul className="mt-4 divide-y divide-line overflow-hidden rounded-md border border-line">
-          {rows.map((m) => <Row key={m.candidateId} m={m} c={candidates.get(m.candidateId)!} selected={selection.candidateId === m.candidateId}
+          {rows.map((m, i) => <Row key={m.candidateId} i={i} m={m} c={candidates.get(m.candidateId)!} selected={selection.candidateId === m.candidateId}
             shortlisted={stateOf(m.candidateId).shortlisted} delta={rankDelta.get(m.candidateId)} feedback={stateOf(m.candidateId).feedback}
             onOpen={() => select({ candidateId: m.candidateId })}
             onToggle={() => patchCandidate(m.candidateId, { shortlisted: !stateOf(m.candidateId).shortlisted })} />)}
@@ -126,12 +127,14 @@ export function ResultsList() {
   );
 }
 
-function Row({ m, c, selected, shortlisted, delta, feedback, onOpen, onToggle }: {
-  m: CandidateMatch; c: Candidate; selected: boolean; shortlisted: boolean; delta?: number; feedback?: string; onOpen: () => void; onToggle: () => void;
+function Row({ i, m, c, selected, shortlisted, delta, feedback, onOpen, onToggle }: {
+  i: number; m: CandidateMatch; c: Candidate; selected: boolean; shortlisted: boolean; delta?: number; feedback?: string; onOpen: () => void; onToggle: () => void;
 }) {
   const why = m.whyAppeared[0] ?? m.needsVerification[0] ?? "No evidence for the criteria in the retrieved profile.";
   return (
-    <li data-testid="result-row" className={cx("flex items-start gap-3 px-3 py-3 transition-colors", selected ? "bg-accent/5" : "hover:bg-panel2/50")}>
+    <motion.li data-testid="result-row" layout="position"
+      initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 300, damping: 32, delay: Math.min(i, 12) * 0.035 }}
+      className={cx("flex items-start gap-3 px-3 py-3 transition-colors", selected ? "bg-accent/8" : "hover:bg-panel2/60")}>
       <button onClick={onOpen} className="min-w-0 flex-1 text-left" aria-label={`Open details for ${c.name}`}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium" data-testid="candidate-name">{c.name}</span>
@@ -156,6 +159,6 @@ function Row({ m, c, selected, shortlisted, delta, feedback, onOpen, onToggle }:
           <Star size={12} aria-hidden fill={shortlisted ? "currentColor" : "none"} />{shortlisted ? "Shortlisted" : "Shortlist"}
         </Button>
       </div>
-    </li>
+    </motion.li>
   );
 }

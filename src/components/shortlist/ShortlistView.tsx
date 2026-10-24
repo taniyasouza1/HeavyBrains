@@ -29,7 +29,7 @@ export function ShortlistView() {
     <div className="mx-auto max-w-[1000px] space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Shortlist</h1>
+          <h1 className="font-display text-4xl font-extrabold tracking-tight md:text-5xl">Shortlist</h1>
           <p className="text-sm text-muted">{rows.length} candidate{rows.length === 1 ? "" : "s"} saved in “{project.name}”.</p>
         </div>
         <Button variant="primary" onClick={exportCsv} disabled={rows.length === 0}><Download size={14} aria-hidden />Export CSV</Button>

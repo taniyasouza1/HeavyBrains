@@ -93,7 +93,7 @@ function Inner() {
 
   const flowEdges: Edge[] = useMemo(() => graph.edges.map((e) => {
     const inFocus = focusIds.size === 0 || (focusIds.has(e.source) && focusIds.has(e.target));
-    const color = e.kind === "evidence" ? "#5fb3ff" : e.kind === "partial_evidence" ? "#f5a623" : e.kind === "requires" ? "#555c6a" : "#4b5260";
+    const color = e.kind === "evidence" ? "#fbbf24" : e.kind === "partial_evidence" ? "#fb923c" : e.kind === "requires" ? "#5a679c" : "#46517f";
     return {
       id: e.id, source: e.source, target: e.target,
       // Evidence runs person → requirement (leftwards); every other relationship flows left to right.
@@ -102,7 +102,7 @@ function Inner() {
       label: focusIds.size > 0 && inFocus && e.kind !== "requires" ? e.label : undefined,
       animated: false, selected: edgeInfo?.id === e.id,
       style: { stroke: color, strokeWidth: e.kind === "evidence" ? 1.6 : 1.1, strokeDasharray: e.kind === "partial_evidence" || e.kind === "worked_at" ? "5 4" : undefined, opacity: inFocus ? 1 : 0.1 },
-      labelStyle: { fill: "#c8ccd4", fontSize: 10 }, labelBgStyle: { fill: "#0b0c0f" },
+      labelStyle: { fill: "#dfe4ff", fontSize: 10 }, labelBgStyle: { fill: "#161b38" },
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
       data: { edge: e },
     };
@@ -140,9 +140,9 @@ function Inner() {
             onEdgeClick={(_, e) => setEdgeInfo((e.data as { edge?: GEdge } | undefined)?.edge ?? null)}
             onPaneClick={() => { setEdgeInfo(null); if (selection.companyName && !selection.candidateId) select({}); }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#262a33" />
+            <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#2f3a6b" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable className="!hidden md:!block" nodeColor={(n) => ((n.data as NData).blindSpot ? "#c4a1ff" : (n.data as NData).kind === "person" ? "#5fb3ff" : "#3a404c")} maskColor="rgba(11,12,15,0.7)" />
+            <MiniMap pannable zoomable className="!hidden md:!block" nodeColor={(n) => ((n.data as NData).blindSpot ? "#ff8fb1" : (n.data as NData).kind === "person" ? "#fbbf24" : "#46517f")} maskColor="rgba(22,27,56,0.7)" />
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-3 top-3 max-w-[260px] rounded-md border border-line bg-panel/95 p-3 text-[11px] text-muted">
