@@ -3,7 +3,7 @@ import type { z } from "zod";
 
 vi.mock("server-only", () => ({}));
 
-import { quoteAppearsIn, reviewCandidates, reviewContent, sanitizeBriefing, sanitizeContent, sanitizeCriteria, verifyPickQuotes, AnalystOut } from "@/lib/ai/agents";
+import { nameIds, quoteAppearsIn, reviewCandidates, reviewContent, sanitizeBriefing, sanitizeContent, sanitizeCriteria, verifyPickQuotes, AnalystOut } from "@/lib/ai/agents";
 import { AgentError, type Llm } from "@/lib/ai/types";
 import { assessCandidate } from "@/lib/discovery/ranking";
 import { runDiscovery, DiscoveryError } from "@/lib/discovery/service";
@@ -83,6 +83,13 @@ describe("sanitizeBriefing", () => {
     const b = sanitizeBriefing({ headline: " Two stand out ", picks: [{ candidateId: "ghost", reason: "x" }, { candidateId: "a", reason: "Solid" }], caveats: [] }, new Set(["a"]));
     expect(b.picks).toEqual([{ candidateId: "a", reason: "Solid" }]);
     expect(b.headline).toBe("Two stand out");
+  });
+});
+
+describe("nameIds", () => {
+  it("replaces leaked internal ids with names, longest id first", () => {
+    const m = new Map([["cd-2", { id: "cd-2", name: "Ann" }], ["cd-22", { id: "cd-22", name: "Bo" }]] as never);
+    expect(nameIds("Lower-scored profiles like cd-22 and cd-2.", m as never)).toBe("Lower-scored profiles like Bo and Ann.");
   });
 });
 

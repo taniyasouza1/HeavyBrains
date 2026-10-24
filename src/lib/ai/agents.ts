@@ -273,6 +273,8 @@ Rules:
 - headline: one plain sentence on what the search found, including how many strong candidates stand out.
 - picks: up to 5 candidates, best first, each with a reason of at most two sentences that names the specific evidence (quote a few words). If a candidate is flagged "outside your usual pool", say so and why that matters.
 - caveats: up to 3 short notes on what the data cannot tell (unknown criteria, thin profiles, self-reported claims).
+- Refer to people by name only. Never write the internal ids shown in the profile tags.
+- The headline's counts must match what you list: do not state a total you cannot see.
 - Plain language, no hype, no superlatives. Scores are role-relevance estimates, not a measure of ability. ${UNTRUSTED}`;
 
 export function sanitizeBriefing(out: z.infer<typeof BriefingOut>, validIds: Set<string>): Briefing {
@@ -286,6 +288,13 @@ export function sanitizeBriefing(out: z.infer<typeof BriefingOut>, validIds: Set
 const quotedSegments = (s: string) => [...s.matchAll(/["\u201c]([^"\u201d]{12,})["\u201d]/g)].map((m) => m[1]);
 const profileCorpus = (c: Candidate) =>
   [c.headline, c.summary, c.skills.join(", "), ...c.employment.flatMap((e) => [e.title, e.description])].filter(Boolean).join("\n");
+
+/** Swaps any internal candidate id the model let slip into prose for the person's name. */
+export function nameIds(text: string, candidates: Map<string, Candidate>): string {
+  let out = text;
+  for (const c of [...candidates.values()].sort((a, b) => b.id.length - a.id.length)) out = out.split(c.id).join(c.name);
+  return out;
+}
 
 /** Same rule as the reviewers: a pick that quotes the profile must quote it verbatim, or the pick is dropped. */
 export function verifyPickQuotes(briefing: Briefing, candidates: Map<string, Candidate>): Briefing {
@@ -319,7 +328,8 @@ export async function writeBriefing(
     agent: "Briefing Writer", system: BRIEFING_SYSTEM, schema: BriefingOut, effort: "low", maxTokens: 3000,
     user: `Role: ${criteria.roleTitle}. ${prefs.usualCompanies.length ? `The recruiter usually searches: ${prefs.usualCompanies.join(", ")}.` : "No usual companies were given, so no usual-versus-outside comparison exists."}\n\n${lines.join("\n\n")}`,
   });
-  return verifyPickQuotes(sanitizeBriefing(out, new Set(top.map((m) => m.candidateId))), candidates);
+  const b = verifyPickQuotes(sanitizeBriefing(out, new Set(top.map((m) => m.candidateId))), candidates);
+  return { headline: nameIds(b.headline, candidates), picks: b.picks.map((p) => ({ ...p, reason: nameIds(p.reason, candidates) })), caveats: b.caveats.map((x) => nameIds(x, candidates)) };
 }
 
 /* ------------------------------------------------------ 5. Content Reviewer */
