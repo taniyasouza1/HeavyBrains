@@ -1,5 +1,5 @@
 import type {
-  Candidate, Company, Criterion, CriterionAssessment, EvidenceCategory, EvidenceItem,
+  AiEvidence, Candidate, Company, Criterion, CriterionAssessment, EvidenceCategory, EvidenceItem,
   Importance, RoleCriteria, Tier,
 } from "@/types";
 import { normalizeName, snippetAround, termRegex } from "@/lib/utils/text";
@@ -46,20 +46,22 @@ interface Unit {
   category: EvidenceCategory;
   sourceKind: keyof ScoringConfig["sourceStrength"];
   label: string;
+  /** Where AI evidence points: "headline", "summary", "skills" or "employment_description:<index>". */
+  ref?: string;
   observedAt?: string;
   limitations?: string[];
 }
 
 function unitsFor(c: Candidate, company: (name: string) => Company | undefined): Unit[] {
   const units: Unit[] = [];
-  for (const e of c.employment) {
+  for (const [i, e] of c.employment.entries()) {
     const when = [e.startDate?.slice(0, 7), e.endDate?.slice(0, 7) ?? (e.current ? "present" : undefined)].filter(Boolean).join(" – ");
     const where = `${e.title ?? "Role"} at ${e.company}${when ? ` (${when})` : ""}`;
     if (e.title) units.push({ key: `t:${e.company}:${e.title}`, text: e.title, category: "employment", sourceKind: "title", label: `Job title — ${where}` });
     if (e.description)
       units.push({
         key: `d:${e.description}`, text: e.description, category: "responsibility", sourceKind: "employmentDescription",
-        label: `Role description — ${where}`,
+        label: `Role description — ${where}`, ref: `employment_description:${i}`,
         limitations: ["Self-reported role description; scale and personal ownership are not verified."],
       });
     const co = company(e.company);
@@ -70,11 +72,11 @@ function unitsFor(c: Candidate, company: (name: string) => Company | undefined):
         limitations: ["Describes the employer, not this person's own work."],
       });
   }
-  if (c.headline) units.push({ key: `h:${c.headline}`, text: c.headline, category: "skill", sourceKind: "headline", label: "Profile headline", limitations: ["Headline is self-written."] });
-  if (c.summary) units.push({ key: `s:${c.summary}`, text: c.summary, category: "responsibility", sourceKind: "summary", label: "Profile summary" });
+  if (c.headline) units.push({ key: `h:${c.headline}`, text: c.headline, category: "skill", sourceKind: "headline", label: "Profile headline", ref: "headline", limitations: ["Headline is self-written."] });
+  if (c.summary) units.push({ key: `s:${c.summary}`, text: c.summary, category: "responsibility", sourceKind: "summary", label: "Profile summary", ref: "summary" });
   if (c.skills.length)
     units.push({
-      key: `k:${c.skills.join("|")}`, text: c.skills.join(", "), category: "skill", sourceKind: "skillsList", label: "Listed skills",
+      key: `k:${c.skills.join("|")}`, text: c.skills.join(", "), category: "skill", sourceKind: "skillsList", label: "Listed skills", ref: "skills",
       limitations: ["A listed skill does not show how or at what scale it was used."],
     });
   return units;
@@ -99,6 +101,8 @@ export function assessCandidate(
   companies: Company[],
   role: RoleCriteria,
   config: ScoringConfig = DEFAULT_SCORING,
+  /** Evidence from AI review for this candidate. Each item is credited like a keyword hit on the same field, never more. */
+  aiEvidence: AiEvidence[] = [],
 ): Assessed {
   const byName = new Map(companies.map((c) => [normalizeName(c.name), c]));
   const units = unitsFor(candidate, (n) => byName.get(normalizeName(n)));
@@ -136,6 +140,29 @@ export function assessCandidate(
           observedAt,
           confidence: strength >= 0.9 ? "high" : strength >= 0.5 ? "medium" : "low",
           limitations: u.limitations,
+        },
+      });
+    }
+    for (const ai of aiEvidence) {
+      if (ai.criterionId !== crit.id) continue;
+      const ref = ai.source === "employment_description" ? `employment_description:${ai.employmentIndex}` : ai.source;
+      const u = units.find((x) => x.ref === ref);
+      if (!u || seen.has(u.key)) continue; // a field already credited by keyword counts once
+      seen.add(u.key);
+      const strength = config.sourceStrength[u.sourceKind];
+      hits.push({
+        strength,
+        ev: {
+          id: `${candidate.id}:${crit.id}:ai${hits.length}`,
+          category: crit.kind === "seniority" ? "seniority" : u.category,
+          claim: `${crit.label}: found by AI evidence review in ${u.label.toLowerCase()}`,
+          quote: ai.quote,
+          source: candidate.source === "demo" ? "demo" : "crustdata",
+          sourceLabel: u.label,
+          sourceUrl: candidate.profileUrl,
+          observedAt,
+          confidence: strength >= 0.9 ? "high" : strength >= 0.5 ? "medium" : "low",
+          limitations: [...(u.limitations ?? []), "Matched by AI evidence review, not a keyword. The quote was checked to appear verbatim in the profile."],
         },
       });
     }

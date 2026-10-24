@@ -9,6 +9,7 @@ import { CriteriaEditor } from "./CriteriaEditor";
 import { PreferencesPanel } from "./PreferencesPanel";
 import { RunPanel } from "./RunPanel";
 import { ResultsList } from "./ResultsList";
+import { BriefingCard } from "./BriefingCard";
 
 const TONE = { must: "accent", nice: "neutral", context: "blind" } as const;
 
@@ -66,6 +67,7 @@ export function DiscoverView() {
       )}
 
       {(run.phase === "running" || run.phase === "error") && <RunPanel />}
+      <BriefingCard />
       <ResultsList />
     </div>
   );

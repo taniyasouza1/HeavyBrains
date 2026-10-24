@@ -6,14 +6,26 @@ import { HARD_LIMITS, liveProvider, type Filter } from "@/lib/crustdata/provider
 import { titleQueryTerms } from "./criteria";
 import { dedupeCandidates } from "./ranking";
 import { normalizeName } from "@/lib/utils/text";
+import { analyzePool } from "./analysis";
+import { analyzeBrief, planSearch, reviewCandidates, writeBriefing, type SearchPlan } from "@/lib/ai/agents";
+import { AgentError, type Llm } from "@/lib/ai/types";
 
-export type ProgressEvent = { stage: string; detail?: string };
+export type ProgressEvent = { stage: string; detail?: string; agent?: boolean };
 
 export interface DiscoveryRequest {
   mode: DataMode;
   criteria: RoleCriteria;
   preferences: RecruiterPreferences;
   limit: number;
+}
+
+/** Set when AI agents take part. `reanalyze` means the Brief Analyst should rewrite the criteria from the brief. */
+export interface AiRun {
+  llm: Llm;
+  model: string;
+  reviewModel?: string;
+  roleDescription: string;
+  reanalyze: boolean;
 }
 
 export class DiscoveryError extends Error {
@@ -27,9 +39,11 @@ const DESCRIPTION = "experience.employment_details.description";
 const COMPANY = "experience.employment_details.current.company_name";
 
 /** Translates criteria into Crustdata filter groups. Each group is one real request. */
-export function buildQueries(criteria: RoleCriteria, prefs: RecruiterPreferences): { label: string; filters: Filter }[] {
-  const title = titleQueryTerms(criteria).map((t) => ({ field: TITLE, type: "(.)", value: t }));
-  const base: Filter[] = [...title];
+export function buildQueries(criteria: RoleCriteria, prefs: RecruiterPreferences, plan?: SearchPlan): { label: string; filters: Filter }[] {
+  const titles = [...new Set([...titleQueryTerms(criteria), ...(plan?.titleVariants ?? [])])];
+  const titleFilters = titles.map((t) => ({ field: TITLE, type: "(.)", value: t }));
+  // Several title variants are alternatives (OR); a single title stays a plain condition.
+  const base: Filter[] = [titleFilters.length > 1 ? { op: "or", conditions: titleFilters } : titleFilters[0]];
   if (criteria.location) base.push({ field: "basic_profile.location.full_location", type: "(.)", value: criteria.location });
   const group = (extra: Filter[]): Filter => ({ op: "and", conditions: [...base, ...extra] });
 
@@ -38,7 +52,8 @@ export function buildQueries(criteria: RoleCriteria, prefs: RecruiterPreferences
     .filter((c) => c.tier !== "context" && c.kind !== "role" && c.kind !== "seniority")
     .slice(0, 4)
     .map((c) => c.terms[0])
-    .filter(Boolean);
+    .filter(Boolean)
+    .concat(plan?.evidencePhrases ?? []);
   const queries: { label: string; filters: Filter }[] = [];
   if (phrases.length)
     queries.push({
@@ -51,7 +66,7 @@ export function buildQueries(criteria: RoleCriteria, prefs: RecruiterPreferences
   return queries;
 }
 
-export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEvent) => void): Promise<DiscoveryResult> {
+async function retrieve(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, plan?: SearchPlan): Promise<DiscoveryResult> {
   const limit = Math.max(1, Math.min(req.limit, HARD_LIMITS.maxProfiles));
   if (req.mode === "demo") {
     emit({ stage: "Loading fictional demo dataset", detail: `${DEMO_CANDIDATES.length} profiles, ${DEMO_COMPANIES.length} companies` });
@@ -71,7 +86,7 @@ export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEven
   const pages = Math.ceil(limit / perPage);
 
   try {
-    for (const q of buildQueries(req.criteria, req.preferences)) {
+    for (const q of buildQueries(req.criteria, req.preferences, plan)) {
       emit({ stage: "Searching Crustdata people", detail: q.label });
       const r = await liveProvider.searchPeople(q.filters, { limit: perPage, pages });
       queries.push({ label: q.label, returned: r.people.length });
@@ -117,4 +132,82 @@ export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEven
 
   emit({ stage: "Normalizing results", detail: `${candidates.length} unique candidates` });
   return { mode: "live", retrievedAt: new Date().toISOString(), candidates, companies, queries, warnings };
+}
+
+const agentFailure = (e: unknown) =>
+  e instanceof AgentError
+    ? new DiscoveryError(e.message, e.code)
+    : new DiscoveryError(`An AI agent failed: ${e instanceof Error ? e.message : "unknown error"}`, "ai_unavailable");
+
+/**
+ * Full discovery run. Without `ai` it is the plain pipeline. With `ai`, specialist agents join in:
+ * Brief Analyst -> Search Strategist -> (retrieval) -> Evidence Reviewers -> Briefing Writer.
+ * Code orchestrates them. Scores still come only from quoted profile text, so AI cannot raise a score without a verifiable quote.
+ */
+export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, ai?: AiRun): Promise<DiscoveryResult> {
+  if (!ai) return retrieve(req, emit);
+
+  const agents: string[] = [];
+  const warnings: string[] = [];
+  let criteria = req.criteria;
+  let analyzed = false;
+
+  if (ai.reanalyze && ai.roleDescription.trim()) {
+    emit({ stage: "Brief Analyst", detail: "Reading your brief and writing search criteria", agent: true });
+    try {
+      criteria = await analyzeBrief(ai.llm, ai.roleDescription);
+    } catch (e) {
+      throw agentFailure(e);
+    }
+    analyzed = true;
+    agents.push("Brief Analyst");
+    emit({ stage: "Brief Analyst", detail: `${criteria.criteria.length} criteria for ${criteria.roleTitle}`, agent: true });
+  }
+
+  let plan: SearchPlan | undefined;
+  if (req.mode === "live") {
+    emit({ stage: "Search Strategist", detail: "Planning queries, including adjacent job titles", agent: true });
+    try {
+      plan = await planSearch(ai.llm, criteria);
+      agents.push("Search Strategist");
+      emit({ stage: "Search Strategist", detail: `${plan.titleVariants.length} title variants, ${plan.evidencePhrases.length} evidence phrases`, agent: true });
+    } catch (e) {
+      if (e instanceof AgentError && (e.code === "ai_auth" || e.code === "ai_rate_limit")) throw agentFailure(e);
+      warnings.push(`The Search Strategist failed (${e instanceof Error ? e.message : "unknown error"}). The search used the standard title query.`);
+    }
+  }
+
+  const result = await retrieve({ ...req, criteria }, emit, plan);
+  result.warnings.push(...warnings);
+
+  if (result.candidates.length) {
+    emit({ stage: "Evidence Reviewers", detail: `Reading ${result.candidates.length} profiles for evidence keywords missed`, agent: true });
+    try {
+      const review = await reviewCandidates(ai.llm, criteria, result.candidates, result.companies, {
+        model: ai.reviewModel,
+        onProgress: (done, total) => emit({ stage: "Evidence Reviewers", detail: `${done} of ${total} review batches finished`, agent: true }),
+      });
+      result.aiEvidence = review.evidence;
+      result.warnings.push(...review.warnings);
+      if (review.rejected) result.warnings.push(`${review.rejected} AI finding(s) were discarded because their quote was not found verbatim in the profile.`);
+      agents.push("Evidence Reviewers");
+      emit({ stage: "Evidence Reviewers", detail: `${review.evidence.length} new pieces of evidence, each quoted from a profile`, agent: true });
+    } catch (e) {
+      if (e instanceof AgentError && (e.code === "ai_auth" || e.code === "ai_rate_limit")) throw agentFailure(e);
+      result.warnings.push(`Evidence review failed (${e instanceof Error ? e.message : "unknown error"}). Scores use keyword matching only.`);
+    }
+
+    emit({ stage: "Briefing Writer", detail: "Summarising the strongest candidates", agent: true });
+    try {
+      const matches = analyzePool(result, criteria, req.preferences);
+      result.briefing = await writeBriefing(ai.llm, criteria, req.preferences, matches, new Map(result.candidates.map((c) => [c.id, c])));
+      agents.push("Briefing Writer");
+    } catch (e) {
+      result.warnings.push(`The briefing could not be written (${e instanceof Error ? e.message : "unknown error"}).`);
+    }
+  }
+
+  if (analyzed) result.criteria = criteria;
+  result.ai = { model: ai.model, agents };
+  return result;
 }

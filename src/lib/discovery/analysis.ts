@@ -1,5 +1,5 @@
 import type {
-  Candidate, CandidateMatch, Criterion, CriterionAssessment, DiscoveryResult, PoolView,
+  AiEvidence, Candidate, CandidateMatch, Criterion, CriterionAssessment, DiscoveryResult, PoolView,
   RecruiterPreferences, RoleCriteria,
 } from "@/types";
 import { assessCandidate, DEFAULT_SCORING, type ScoringConfig } from "./ranking";
@@ -55,13 +55,15 @@ function explain(
 }
 
 export function analyzePool(
-  result: Pick<DiscoveryResult, "candidates" | "companies">,
+  result: Pick<DiscoveryResult, "candidates" | "companies"> & Partial<Pick<DiscoveryResult, "aiEvidence">>,
   role: RoleCriteria,
   prefs: RecruiterPreferences,
   config: ScoringConfig = DEFAULT_SCORING,
 ): CandidateMatch[] {
+  const aiByCandidate = new Map<string, AiEvidence[]>();
+  for (const e of result.aiEvidence ?? []) aiByCandidate.set(e.candidateId, [...(aiByCandidate.get(e.candidateId) ?? []), e]);
   const matches = result.candidates.map((c): CandidateMatch => {
-    const { assessments, score } = assessCandidate(c, result.companies, role, config);
+    const { assessments, score } = assessCandidate(c, result.companies, role, config, aiByCandidate.get(c.id));
     const technicalMust = new Set(role.criteria.filter((x) => x.tier === "must" && x.kind !== "role" && x.kind !== "seniority").map((x) => x.id));
     const supportedMust = assessments.filter((a) => technicalMust.has(a.criterionId) && a.status === "supported").length;
     const inUsualPool = isInUsualPool(c, prefs);

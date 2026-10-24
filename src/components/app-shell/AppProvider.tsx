@@ -11,11 +11,14 @@ import { normalizeName } from "@/lib/utils/text";
 
 type RunState =
   | { phase: "idle" }
-  | { phase: "running"; steps: { stage: string; detail?: string }[] }
+  | { phase: "running"; steps: { stage: string; detail?: string; agent?: boolean }[] }
   | { phase: "error"; code: string; message: string }
-  | { phase: "done"; steps: { stage: string; detail?: string }[] };
+  | { phase: "done"; steps: { stage: string; detail?: string; agent?: boolean }[] };
 
-interface Status { liveConfigured: boolean; defaultMode: DataMode }
+interface Status { liveConfigured: boolean; defaultMode: DataMode; aiConfigured?: boolean; aiModel?: string }
+
+/** AI agents run when the project says so, or by default when the server has a key. */
+export const aiEnabled = (p: SourcingProject | null, st: Status | null) => (p?.ai ?? !!st?.aiConfigured);
 
 export interface Selection { candidateId?: string; companyName?: string }
 
@@ -37,6 +40,7 @@ interface Ctx {
   run: RunState;
   runDiscovery: () => Promise<void>;
   setMode: (m: DataMode) => void;
+  setAi: (on: boolean) => void;
   selection: Selection;
   select: (s: Selection) => void;
   view: PoolView;
@@ -180,28 +184,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRun({ phase: "idle" });
   }, [update]);
 
+  const setAi = useCallback((on: boolean) => {
+    update((p) => ({ ...p, ai: on }));
+    setRun({ phase: "idle" });
+  }, [update]);
+
   const runDiscovery = useCallback(async () => {
     if (!project || running.current) return; // blocks duplicate submissions
     running.current = true;
-    const steps: { stage: string; detail?: string }[] = [];
+    const useAi = aiEnabled(project, status);
+    // The Brief Analyst rewrites criteria only when the brief changed since they were last derived,
+    // so a recruiter's manual criteria edits survive a re-run.
+    const reanalyze = useAi && project.roleDescription.trim() !== "" && project.roleDescription !== project.briefAnalyzed;
+    const steps: { stage: string; detail?: string; agent?: boolean }[] = [];
     try {
       let criteria = project.criteria;
-      if (!criteria.criteria.length && project.roleDescription.trim()) {
+      if (!criteria.criteria.length && project.roleDescription.trim() && !reanalyze) {
         criteria = parseRoleDescription(project.roleDescription);
         update((p) => ({ ...p, criteria }));
       }
-      if (!criteria.criteria.length) {
+      if (!criteria.criteria.length && !reanalyze) {
         setRun({ phase: "error", code: "no_criteria", message: "Describe the role (or add at least one criterion) before running discovery." });
         return;
       }
       setRun({ phase: "running", steps: [] });
       const res = await fetch("/api/discovery", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: project.mode, criteria, preferences: project.preferences, limit: 50 }),
+        body: JSON.stringify({ mode: project.mode, criteria: criteria.roleTitle ? criteria : { ...criteria, roleTitle: "Role" }, preferences: project.preferences, limit: 50, ai: useAi, reanalyze, roleDescription: project.roleDescription }),
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
-        setRun({ phase: "error", code: "bad_request", message: j.error ?? `Request failed (${res.status}).` });
+        setRun({ phase: "error", code: j.code ?? "bad_request", message: j.error ?? `Request failed (${res.status}).` });
         return;
       }
       const reader = res.body.getReader();
@@ -219,14 +232,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (!line) continue;
           const ev = JSON.parse(line);
           if (ev.type === "progress") {
-            steps.push({ stage: ev.stage, detail: ev.detail });
+            steps.push({ stage: ev.stage, detail: ev.detail, agent: ev.agent });
             setRun({ phase: "running", steps: [...steps] });
           } else if (ev.type === "error") {
             setRun({ phase: "error", code: ev.code, message: ev.message });
             finished = true;
           } else if (ev.type === "result") {
             const r = ev.result as DiscoveryResult;
-            update((p) => ({ ...p, result: r }));
+            // Criteria written by the Brief Analyst replace the stored ones, so scores and chips match what the search used.
+            update((p) => ({ ...p, result: r, ...(r.criteria ? { criteria: r.criteria, briefAnalyzed: p.roleDescription } : {}) }));
             setView("all");
             setRun({ phase: "done", steps });
             finished = true;
@@ -239,11 +253,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } finally {
       running.current = false;
     }
-  }, [project, update]);
+  }, [project, status, update]);
 
   const value: Ctx = {
     hydrated, status, projects, project, update, createProject, openProject, deleteProject, matches, candidates, companies,
-    companyByName, stateOf, patchCandidate, run, runDiscovery, setMode, selection, select, view, setView, showExcluded,
+    companyByName, stateOf, patchCandidate, run, runDiscovery, setMode, setAi, selection, select, view, setView, showExcluded,
     setShowExcluded, rankDelta,
   };
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

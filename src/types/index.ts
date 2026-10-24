@@ -117,6 +117,22 @@ export interface CandidateMatch {
   dataLimitations: string[];
 }
 
+/** Evidence an AI reviewer found that keyword matching missed. The quote is verified verbatim against the profile. */
+export interface AiEvidence {
+  candidateId: string;
+  criterionId: string;
+  source: "employment_description" | "summary" | "headline" | "skills";
+  /** Index into the candidate's employment list when source is employment_description. */
+  employmentIndex?: number;
+  quote: string;
+}
+
+export interface Briefing {
+  headline: string;
+  picks: { candidateId: string; reason: string }[];
+  caveats: string[];
+}
+
 export interface DiscoveryResult {
   mode: DataMode;
   retrievedAt: string;
@@ -124,6 +140,12 @@ export interface DiscoveryResult {
   companies: Company[];
   queries: { label: string; returned: number }[];
   warnings: string[];
+  /** Criteria the search actually used. Set when the Brief Analyst (re)wrote them. */
+  criteria?: RoleCriteria;
+  aiEvidence?: AiEvidence[];
+  briefing?: Briefing;
+  /** Present when AI agents took part in this run. */
+  ai?: { model: string; agents: string[] };
 }
 
 export type FeedbackKind =
@@ -144,6 +166,10 @@ export interface SourcingProject {
   criteria: RoleCriteria;
   preferences: RecruiterPreferences;
   mode: DataMode;
+  /** Whether AI agents run on discovery. Unset means "on when a key is configured". */
+  ai?: boolean;
+  /** The brief text the current criteria were derived from, so edits to it trigger re-analysis. */
+  briefAnalyzed?: string;
   result?: DiscoveryResult;
   candidateState: Record<string, CandidateState>;
   createdAt: string;

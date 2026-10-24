@@ -4,7 +4,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { usePathname } from "next/navigation";
 import { IconCompass as Compass, IconLayoutKanban as FolderKanban, IconHierarchy2 as Network, IconStar as Star } from "@tabler/icons-react";
-import { useApp } from "./AppProvider";
+import { aiEnabled, useApp } from "./AppProvider";
 import { Button, Chip, cx } from "@/components/ui/primitives";
 import { CandidateDrawer } from "@/components/candidates/CandidateDrawer";
 import { CompanyDrawer } from "@/components/candidates/CompanyDrawer";
@@ -24,11 +24,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function Workspace({ pathname, children }: { pathname: string; children: React.ReactNode }) {
-  const { hydrated, project, status, setMode, run, runDiscovery, selection, update } = useApp();
+  const { hydrated, project, status, setMode, setAi, run, runDiscovery, selection, update } = useApp();
   const shortlistCount = project ? Object.values(project.candidateState).filter((s) => s.shortlisted).length : 0;
   const resultMode = project?.result?.mode;
   const mode = project?.mode ?? "demo";
   const liveBlocked = mode === "live" && status && !status.liveConfigured;
+  const ai = aiEnabled(project, status);
+  const aiBlocked = ai && status && !status.aiConfigured;
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
@@ -92,9 +94,16 @@ function Workspace({ pathname, children }: { pathname: string; children: React.R
                 </button>
               ))}
             </div>
+            <button
+              onClick={() => setAi(!ai)} aria-pressed={ai}
+              title={ai ? "AI agents read your brief, widen the search, review evidence and write a briefing. Click to turn off." : "Keyword rules only. Click to turn AI agents on."}
+              className={cx("rounded-md border px-2.5 py-1 text-[11px] font-semibold tracking-wider transition-colors", ai ? "border-accent/50 bg-accent/15 text-accent" : "border-line bg-panel text-muted hover:text-ink")}
+            >
+              {ai ? "AI AGENTS ON" : "AI AGENTS OFF"}
+            </button>
             {resultMode && resultMode !== mode && <Chip tone="warn" title="The displayed results were retrieved in a different mode. Re-run discovery to refresh.">results: {resultMode}</Chip>}
-            <Button variant="primary" size="sm" onClick={() => void runDiscovery()} disabled={!project || run.phase === "running" || !!liveBlocked}
-              title={liveBlocked ? "Live mode needs CRUSTDATA_API_KEY on the server" : undefined}>
+            <Button variant="primary" size="sm" onClick={() => void runDiscovery()} disabled={!project || run.phase === "running" || !!liveBlocked || !!aiBlocked}
+              title={liveBlocked ? "Live mode needs CRUSTDATA_API_KEY on the server" : aiBlocked ? "AI agents need ANTHROPIC_API_KEY on the server" : undefined}>
               {run.phase === "running" ? "Running…" : project?.result ? "Re-run discovery" : "Run discovery"}
             </Button>
           </div>
@@ -102,6 +111,12 @@ function Workspace({ pathname, children }: { pathname: string; children: React.R
         {liveBlocked && (
           <div role="alert" className="border-b border-warn/30 bg-warn/10 px-6 py-2 text-xs text-warn">
             Live mode is selected but no Crustdata API key is configured on the server. Add CRUSTDATA_API_KEY to .env and restart, or switch to demo data.
+          </div>
+        )}
+        {aiBlocked && (
+          <div role="alert" className="border-b border-warn/30 bg-warn/10 px-6 py-2 text-xs text-warn">
+            AI agents are on but no Anthropic API key is configured on the server. Add ANTHROPIC_API_KEY to .env and restart, or turn AI agents off.
+            <button onClick={() => setAi(false)} className="ml-2 underline underline-offset-2">Turn off</button>
           </div>
         )}
         {mode === "demo" && (

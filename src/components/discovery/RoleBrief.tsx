@@ -1,13 +1,13 @@
 "use client";
 
 import { IconSearch as Search } from "@tabler/icons-react";
-import { useApp } from "@/components/app-shell/AppProvider";
+import { aiEnabled, useApp } from "@/components/app-shell/AppProvider";
 import { Button, Section, inputCls } from "@/components/ui/primitives";
 import { parseRoleDescription } from "@/lib/discovery/criteria";
 import { DEMO_ROLE_TEXT, DEMO_USUAL_COMPANIES } from "@/lib/demo/dataset";
 
 export function RoleBrief({ onFind }: { onFind: () => void }) {
-  const { project, update, setMode } = useApp();
+  const { project, update, setMode, status } = useApp();
   if (!project) return null;
   const extract = () =>
     update((p) => {
@@ -44,7 +44,7 @@ export function RoleBrief({ onFind }: { onFind: () => void }) {
       />
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button variant="primary" onClick={() => { extract(); onFind(); }} disabled={!project.roleDescription.trim()}><Search size={14} aria-hidden /> Find people</Button>
-        <p className="text-xs text-muted">Criteria are read from your brief with fixed rules (no LLM). Fine-tune them below if you like.</p>
+        <p className="text-xs text-muted">{aiEnabled(project, status) ? "AI agents read your brief, search, review the evidence and write a briefing." : "Criteria are read from your brief with fixed keyword rules. Turn AI agents on in the header for deeper matching."}</p>
       </div>
     </Section>
   );

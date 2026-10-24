@@ -62,6 +62,7 @@ export function ResultsList() {
       <Section title="Results"><div className="space-y-3" aria-busy="true">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}</div></Section>
     );
 
+  if (!project.result && run.phase === "error") return null; // the error panel above already explains what happened
   if (!project.result)
     return <EmptyState title="No results yet" body="Describe the role, review the criteria, and run discovery. Results will be ranked with the evidence behind each score." />;
 
