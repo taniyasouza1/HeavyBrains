@@ -61,7 +61,7 @@ Start to finish, without a person:
 | Crustdata Person Enrich and Company Enrich | Run live: 10 people and 39 employers enriched in a 51-second search |
 | Evidence engine, quote verification, blind spots, signals, enrich merging, pay logic | Covered by 101 automated tests, using a fake model and fake network calls |
 | Pay estimates and budget | Logic, UI and tests are built, but **no salary data source is connected**, so it is dormant |
-| Post-quality review (Crustdata Social Post API) | Built and tested; **not yet run live** (the endpoint must be enabled on your Crustdata account) |
+| Post-quality review (Crustdata Social Post API) | Run live on 5 candidates: 1 judged (9 posts, quotes verified), 4 had 0 to 2 posts and correctly came back "insufficient" at no cost. About 5 credits for the one judged person |
 | Open-source, patents, citations, product-with-users, closed-company, downturn-promotion signals | Scoring logic built and tested; **not connected to a data source yet** (planned: your Supabase) |
 
 ## What it could do in the future
@@ -213,4 +213,5 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
 - "Startup veteran" uses a company's funding stage and team size **today**; Crustdata returned no funding-round dates, so it shows time at a
   lean seed-stage company, not proof they joined before its first round.
 - Reviews are capped at 40 candidates per search to bound cost.
+- The post review judges technical substance in posts, so a founder who posts about their product reads as "promotional" (it earns no points, but is not a penalty). Most engineers post too little to judge.
 - The unverified items in the status table above.

@@ -83,8 +83,8 @@ and we would rather ship a verified shortlist than a risky sender.
   field, failed batches, a failed analyst, id leaks, the percentile math, budget logic, and the unchecked-signals rule.
 - **Live runs:** the full pipeline on demo data and on live Crustdata, including a real job posting and the Bengaluru brief.
 - **Replaying real output** through the verifier, which found the punctuation bug.
-- **A production build** passes. **Not** tested live: the post-quality review (needs `/social_post/search` enabled on the
-  account) and pay estimates (no salary source is connected).
+- **A production build** passes. The post-quality review has been run live on 5 real candidates. Pay estimates are **not** tested live (no salary
+  source is connected).
 
 ## What we left out to ship
 
@@ -110,7 +110,8 @@ removed). Also cached search results: re-running a search spends credits again.
 - `POST /company/enrich` (**live**): their employers (capped at 40) get funding stage, engineers on the team and growth, which
   powers the "startup veteran" metric: years at pre-seed or seed-stage startups with 15 or fewer engineers. About 2 credits each.
   Found by probing: 10 ids at once returns a 500, 5 works; we batch by 5 and split any batch that fails.
-- `POST /social_post/search`: the optional, on-demand post-quality review (0.5 credits per post). Built from the docs, not yet run live.
+- `POST /social_post/search` (**live**): the optional, on-demand post-quality review (0.5 credits per post). Run on 5 candidates: one judged
+  from 9 posts ("promotional": a founder marketing their product, every quote verified), four with 0 to 2 posts correctly "insufficient" at no cost.
 - **A workflow Crustdata could offer:** "evidence-verified sourcing", people search returned with the quotable text behind
   each match, so downstream agents can cite sources instead of asserting them.
 
