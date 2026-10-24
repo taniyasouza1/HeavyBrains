@@ -199,6 +199,15 @@ function Overview({ c, m, crit, onOpen }: { c: Candidate; m: CandidateMatch; cri
         </section>
       )}
 
+      {c.education && c.education.length > 0 && (
+        <section>
+          <h3 className="mb-2 text-sm font-semibold text-muted">Education</h3>
+          <ul className="space-y-1 text-[15px]">
+            {c.education.map((s, i) => <li key={i}>{s.school}<span className="text-muted">{[s.degree, s.field].filter(Boolean).length ? ` · ${[s.degree, s.field].filter(Boolean).join(", ")}` : ""}</span></li>)}
+          </ul>
+        </section>
+      )}
+
       {(c.headline || c.summary || c.skills.length > 0) && (
         <section>
           <h3 className="mb-2 text-sm font-semibold text-muted">Their own words</h3>
@@ -271,12 +280,27 @@ function Career({ c, companyByName, onCompany }: { c: Candidate; companyByName: 
   if (!c.employment.length) return <p className="text-[15px] text-muted">Employment history is not available for this profile.</p>;
   return (
     <ol className="relative ml-2 space-y-6 border-l border-line pl-6">
-      {c.employment.map((e, i) => <CareerItem key={i} e={e} industry={companyByName(e.company)?.industry} onCompany={onCompany} />)}
+      {c.employment.map((e, i) => <CareerItem key={i} e={e} company={companyByName(e.company)} onCompany={onCompany} />)}
     </ol>
   );
 }
 
-function CareerItem({ e, industry, onCompany }: { e: Employment; industry?: string; onCompany: (n: string) => void }) {
+const usd = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : `$${Math.round(n / 1e3)}k`);
+
+/** Facts about the employer that Crustdata supplied: founding year, size, stage, engineers, funding. */
+function companyFacts(co?: Company): string[] {
+  if (!co) return [];
+  return [
+    co.yearFounded ? `Founded ${co.yearFounded}` : "",
+    co.employeeRange ? `${co.employeeRange} people` : co.headcount ? `about ${co.headcount} people` : "",
+    co.engineers != null ? `${co.engineers} engineer${co.engineers === 1 ? "" : "s"}` : "",
+    co.funding?.lastRound ? `${co.funding.lastRound.replace(/_/g, " ")} stage` : "",
+    co.funding?.totalUsd ? `${usd(co.funding.totalUsd)} raised` : "",
+  ].filter(Boolean);
+}
+
+function CareerItem({ e, company, onCompany }: { e: Employment; company?: Company; onCompany: (n: string) => void }) {
+  const industry = company?.industry;
   const [more, setMore] = useState(false);
   const long = (e.description?.length ?? 0) > 240;
   const span = [e.startDate?.slice(0, 7), e.endDate?.slice(0, 7) ?? (e.current ? "present" : undefined)].filter(Boolean).join(" → ");
@@ -289,7 +313,10 @@ function CareerItem({ e, industry, onCompany }: { e: Employment; industry?: stri
         <button className="text-accent hover:underline" onClick={() => onCompany(e.company)}>{e.company}</button>
         {e.current && <span className="ml-2"><Chip tone="accent">Current</Chip></span>}
       </p>
-      <p className="text-sm text-muted">{span || "Dates not available"}{t ? ` · ${t}` : ""}{industry ? ` · ${industry}` : ""}</p>
+      <p className="text-sm text-muted">{span || "Dates not available"}{t ? ` · ${t}` : ""}{e.employmentType ? ` · ${e.employmentType}` : ""}{industry ? ` · ${industry}` : ""}</p>
+      {companyFacts(company).length > 0 && (
+        <p className="mt-1 flex flex-wrap gap-1.5">{companyFacts(company).map((f) => <Chip key={f}>{f}</Chip>)}</p>
+      )}
       {e.description && (
         <>
           <p className={cx("mt-2 whitespace-pre-line text-[15px] leading-relaxed text-ink/90", long && !more && "line-clamp-3")}>{e.description}</p>

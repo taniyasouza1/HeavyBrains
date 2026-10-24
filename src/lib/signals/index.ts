@@ -7,13 +7,13 @@ import { normalizeName } from "@/lib/utils/text";
 /** Points each signal can earn. They only compete with each other, never with the relevance score. */
 export const SIGNAL_MAX: Record<SignalId, number> = {
   open_source: 15, patents: 10, citations: 10, product_with_users: 10, boomerang: 10, fast_promotion: 10,
-  lean_team: 5, competitor: 10, repeat_contract: 5, promoted_in_downturn: 10, closed_company: 5, content_quality: 10,
+  lean_team: 5, early_stage: 10, startup_veteran: 20, competitor: 10, repeat_contract: 5, promoted_in_downturn: 10, closed_company: 5, content_quality: 10,
 };
 
 const LABEL: Record<SignalId, string> = {
   open_source: "Open-source contribution", patents: "Patents cited by papers", citations: "Paper citations",
   product_with_users: "Built a product with real users", boomerang: "Rehired by the same company", fast_promotion: "Fast promotion at one company",
-  lean_team: "Worked at lean-team companies", competitor: "Same experience at a competitor", repeat_contract: "Hired repeatedly on contract",
+  lean_team: "Worked at lean-team companies", early_stage: "Joined companies while they were young", startup_veteran: "Startup veteran: lean seed-stage teams", competitor: "Same experience at a competitor", repeat_contract: "Hired repeatedly on contract",
   promoted_in_downturn: "Promoted during a difficult period", closed_company: "Left a company that then closed", content_quality: "Posts real technical work",
 };
 
@@ -104,6 +104,90 @@ function leanTeam(c: Candidate, companies: Company[]): SignalResult {
   return mk("lean_team", "profile", best, ev, "Headcount is the company's size today, not when this person worked there.");
 }
 
+/** Company age is measured when the person joined, from the founding year. Size is today's. */
+function earlyStage(c: Candidate, companies: Company[]): SignalResult {
+  const byId = new Map(companies.map((x) => [x.id, x]));
+  const byName = new Map(companies.map((x) => [normalizeName(x.name), x]));
+  let checked = false, best = 0;
+  const ev: string[] = [];
+  for (const e of c.employment) {
+    const co = (e.companyId ? byId.get(`cd-${e.companyId}`) : undefined) ?? byName.get(normalizeName(e.company));
+    const joined = Number(e.startDate?.slice(0, 4));
+    if (!co?.yearFounded || !joined) continue;
+    checked = true;
+    const age = joined - co.yearFounded;
+    if (age < 0) continue; // a start date before the founding year is a data error, not evidence
+    const v = age <= 3 ? 1 : age <= 6 ? 0.5 : 0;
+    if (v) ev.push(`Joined ${e.company} in ${joined}, ${age === 0 ? "the year it was founded" : `${age} year${age > 1 ? "s" : ""} after it was founded`} (${co.yearFounded})${co.employeeRange ? `; about ${co.employeeRange} people today` : ""}.`);
+    best = Math.max(best, v);
+  }
+  if (!checked) return unchecked("early_stage", "profile", "Needs the founding year of their employers, which live searches provide.");
+  return mk("early_stage", "profile", best, ev, "Company age is measured when they joined. Company size is today's, not then.");
+}
+
+const SEED_STAGE = /pre.?seed|seed|angel|grant|bootstrap/i;
+const NOT_A_STARTUP = /sole proprietor|self.?employed|non.?profit|educational|government|partnership/i;
+const LEAN_ENGINEERS = 15;
+const MIN_TEAM = 3; // for unfunded companies: people besides the founder, so one-person profiles do not pass
+
+/** Total months covered by a set of [start, end] spans, counting overlaps once. */
+function unionMonths(spans: [number, number][]): number {
+  const sorted = [...spans].sort((a, b) => a[0] - b[0]);
+  let total = 0, curStart = -Infinity, curEnd = -Infinity;
+  for (const [s, e] of sorted) {
+    if (s > curEnd) { if (curEnd > curStart) total += curEnd - curStart; curStart = s; curEnd = e; }
+    else curEnd = Math.max(curEnd, e);
+  }
+  return curEnd > curStart ? total + (curEnd - curStart) : total;
+}
+
+/**
+ * Time spent at startups that are pre-seed or seed stage with a lean engineering team (15 or fewer engineers).
+ * Overlapping roles at one company count once. An unfunded company counts only if it was young when they joined and has 3 or more people.
+ * Stage and team size are the company's today; round dates are not available, so this shows they spent a year or more
+ * at such a company, not that they joined before its first round.
+ */
+function startupVeteran(c: Candidate, companies: Company[]): SignalResult {
+  const byId = new Map(companies.map((x) => [x.id, x]));
+  const byName = new Map(companies.map((x) => [normalizeName(x.name), x]));
+  const now = new Date().getFullYear() * 12 + new Date().getMonth();
+  const perCompany = new Map<string, { co: Company; spans: [number, number][]; firstJoined: number }>();
+  let known = false;
+  for (const e of c.employment) {
+    const co = (e.companyId ? byId.get(`cd-${e.companyId}`) : undefined) ?? byName.get(normalizeName(e.company));
+    if (!co?.funding) continue; // no funding data: cannot judge this employer
+    known = true;
+    const s = monthIndex(e.startDate), end = monthIndex(e.endDate) ?? (e.current ? now : undefined);
+    if (s == null || end == null || end <= s) continue;
+    const stage = co.funding.lastRound;
+    const seedStage = stage ? SEED_STAGE.test(stage) : (co.funding.totalUsd ?? 0) <= 1_000_000;
+    const young = stage || (co.yearFounded != null && Math.floor(s / 12) - co.yearFounded <= 6); // unfunded companies must have been young
+    const lean = co.engineers != null ? co.engineers <= LEAN_ENGINEERS : (co.headcount ?? Infinity) <= 50;
+    // A recorded pre-seed or seed round shows a real startup even when LinkedIn lists one or two people; an unfunded company needs a team.
+    const realTeam = stage ? true : co.headcount != null && co.headcount >= MIN_TEAM;
+    // LinkedIn labels many real startups "Self-Employed", so company type only counts against an unfunded company.
+    const wrongType = !stage && NOT_A_STARTUP.test(co.companyType ?? "");
+    if (!seedStage || !young || !lean || !realTeam || wrongType) continue;
+    const cur = perCompany.get(co.id) ?? { co, spans: [], firstJoined: s };
+    cur.spans.push([s, end]);
+    perCompany.set(co.id, cur);
+  }
+  if (!known) return unchecked("startup_veteran", "profile", "Needs funding and team size for their employers (Crustdata Company Enrich, run on the top candidates).");
+  const ev: string[] = [];
+  const all: [number, number][] = [];
+  for (const { co, spans } of perCompany.values()) {
+    const months = unionMonths(spans);
+    if (months < 12) continue; // at least a year at the company
+    all.push(...spans);
+    const yrs = Math.round((months / 12) * 10) / 10;
+    const team = co.engineers != null ? `${co.engineers} engineer${co.engineers === 1 ? "" : "s"}` : `${co.headcount} people`;
+    ev.push(`${yrs} years at ${co.name}: ${co.funding?.lastRound ? co.funding.lastRound.replace(/_/g, " ") : "unfunded"} stage, ${team}.`);
+  }
+  const years = unionMonths(all) / 12;
+  return mk("startup_veteran", "profile", years >= 4 ? 1 : years >= 2 ? 0.7 : years >= 1 ? 0.4 : 0, ev,
+    "Stage and team size are the company's today. Round dates are not available, so this shows they spent a year or more at a lean seed-stage company. Overlapping roles count once.");
+}
+
 function competitor(c: Candidate, prefs: RecruiterPreferences): SignalResult {
   const list = prefs.competitors ?? [];
   if (!list.length) return unchecked("competitor", "recruiter", "Name your competitors in Fine-tune to check this.");
@@ -142,8 +226,18 @@ function product(x?: ExternalSignals): SignalResult {
   return mk("product_with_users", "database", users ? Math.log10(users) / 5 : 0.5, [users ? `${name}: about ${fmt(users)} users.` : `${name} (user count not recorded).`]);
 }
 
-function repeatContract(x?: ExternalSignals): SignalResult {
-  if (!x?.repeatContractHires) return unchecked("repeat_contract", "database", "No contract history for this person.");
+function repeatContract(c: Candidate, x?: ExternalSignals): SignalResult {
+  if (!x?.repeatContractHires) {
+    // Without outside data, use employment type from the profile when the source supplied it.
+    if (!c.employment.some((e) => e.employmentType)) return unchecked("repeat_contract", "profile", "No employment types in this profile.");
+    const counts = new Map<string, { n: number; name: string }>();
+    for (const e of c.employment.filter((r) => /contract|freelanc/i.test(r.employmentType ?? ""))) {
+      const k = normalizeName(e.company);
+      counts.set(k, { n: (counts.get(k)?.n ?? 0) + 1, name: e.company });
+    }
+    const rows = [...counts.values()].filter((r) => r.n >= 2).sort((a, b) => b.n - a.n);
+    return mk("repeat_contract", "profile", rows.length ? (rows[0].n - 1) / 3 : 0, rows.slice(0, 3).map((r) => `${r.name} engaged them on ${r.n} separate contract roles.`), "Counted from separate contract entries on the profile.");
+  }
   const rows = x.repeatContractHires.filter((r) => r.times >= 2).sort((a, b) => b.times - a.times);
   return mk("repeat_contract", "database", rows.length ? (rows[0].times - 1) / 3 : 0, rows.slice(0, 3).map((r) => `${r.company} hired them ${r.times} times.`));
 }
@@ -187,7 +281,7 @@ export function computeSignals(
 ): Signals {
   const results = [
     openSource(external), patents(external), citations(external), product(external), boomerang(c), fastPromotion(c),
-    leanTeam(c, companies), competitor(c, prefs), repeatContract(external), promotedInDownturn(c, facts), closedCompany(c, facts), contentQuality(external),
+    leanTeam(c, companies), earlyStage(c, companies), startupVeteran(c, companies), competitor(c, prefs), repeatContract(c, external), promotedInDownturn(c, facts), closedCompany(c, facts), contentQuality(external),
   ];
   const checked = results.filter((r) => r.status !== "unchecked");
   const max = checked.reduce((a, r) => a + r.max, 0);

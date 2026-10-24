@@ -235,7 +235,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setRun({ phase: "running", steps: [] });
       const res = await fetch("/api/discovery", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: project.mode, criteria: criteria.roleTitle ? criteria : { ...criteria, roleTitle: "Role" }, preferences: project.preferences, limit: 50, ai: useAi, pay: !!status?.payConfigured, reanalyze, roleDescription: project.roleDescription }),
+        body: JSON.stringify({ mode: project.mode, criteria: criteria.roleTitle ? criteria : { ...criteria, roleTitle: "Role" }, preferences: project.preferences, limit: 50, ai: useAi, pay: !!status?.payConfigured, enrich: project.mode === "live", reanalyze, roleDescription: project.roleDescription }),
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));

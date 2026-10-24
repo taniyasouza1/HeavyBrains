@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { DiscoveryError, runDiscovery, type AiRun, type PayRun } from "@/lib/discovery/service";
+import { DiscoveryError, runDiscovery, type AiRun, type EnrichRun, type PayRun } from "@/lib/discovery/service";
 import { aiModel, createLlm, isAiConfigured, reviewModel } from "@/lib/ai/client";
 import { payRun } from "@/lib/pay/server";
+import { enrichCompanies, enrichPeople } from "@/lib/crustdata/enrich";
 
 // AI runs chain several model calls, so allow more time than a plain search.
 export const maxDuration = 300;
@@ -21,6 +22,8 @@ const BodySchema = z.object({
   limit: z.number().int().min(1).max(100).default(50),
   ai: z.boolean().default(false),
   pay: z.boolean().default(false),
+  /** Run Crustdata Person Enrich and Company Enrich on the top candidates (live mode only; costs credits). */
+  enrich: z.boolean().default(false),
   /** The brief text; the Brief Analyst reads it when `reanalyze` is true. */
   roleDescription: z.string().max(MAX_BRIEF).default(""),
   reanalyze: z.boolean().default(false),
@@ -56,13 +59,14 @@ export async function POST(req: Request) {
     : undefined;
 
   const pay: PayRun | undefined = parsed.data.pay ? payRun() : undefined;
+  const enrich: EnrichRun | undefined = parsed.data.enrich && parsed.data.mode === "live" ? { people: enrichPeople, companies: enrichCompanies } : undefined;
 
   const enc = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       const send = (o: unknown) => controller.enqueue(enc.encode(JSON.stringify(o) + "\n"));
       try {
-        const result = await runDiscovery(parsed.data, (e) => send({ type: "progress", ...e }), ai, pay);
+        const result = await runDiscovery(parsed.data, (e) => send({ type: "progress", ...e }), ai, pay, enrich);
         send({ type: "result", result });
       } catch (e) {
         const known = e instanceof DiscoveryError;

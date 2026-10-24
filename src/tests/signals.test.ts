@@ -100,6 +100,77 @@ describe("database signals", () => {
   });
 });
 
+const co = (id: string, name: string, extra: Partial<Company> = {}): Company => ({ id: `cd-${id}`, name, source: "crustdata", ...extra });
+const at = (id: string, name: string, title: string, start: string, end?: string, extra: Partial<Employment> = {}) => job(name, title, start, end, { companyId: id, ...extra });
+
+describe("startup veteran", () => {
+  const seedLean = co("1", "Proximal", { funding: { lastRound: "seed", totalUsd: 15_000_000 }, engineers: 13, headcount: 35 });
+  it("adds up years at lean seed-stage startups and ignores later stages and big teams", () => {
+    const p = person([at("1", "Proximal", "Engineer", "2022-01", "2025-01"), at("2", "Avoma", "Engineer", "2018-01", "2021-12"), at("3", "Tiny", "Engineer", "2016-01", "2017-12")]);
+    const companies = [seedLean, co("2", "Avoma", { funding: { lastRound: "series_a" }, engineers: 26 }), co("3", "Tiny", { funding: { lastRound: "pre_seed", totalUsd: 200_000 }, engineers: 4, headcount: 9 })];
+    const r = get(computeSignals(p, companies, prefs), "startup_veteran");
+    expect(r.status).toBe("found");
+    expect(r.evidence).toHaveLength(2); // Proximal and Tiny, not Avoma
+    expect(r.earned).toBe(20); // 3 + 2 years = 5 years
+  });
+  it("needs a year at the company and at most 15 engineers", () => {
+    const short = person([at("1", "Proximal", "Engineer", "2024-01", "2024-06")]);
+    expect(get(computeSignals(short, [seedLean], prefs), "startup_veteran").status).toBe("none");
+    const big = person([at("4", "Bigco", "Engineer", "2020-01", "2024-01")]);
+    expect(get(computeSignals(big, [co("4", "Bigco", { funding: { lastRound: "seed" }, engineers: 40, headcount: 120 })], prefs), "startup_veteran").status).toBe("none");
+  });
+  it("falls back to total headcount when there is no engineer count, and treats a young unfunded company as pre-seed", () => {
+    const p = person([at("5", "Quiet", "Engineer", "2020-01", "2022-06")]);
+    expect(get(computeSignals(p, [co("5", "Quiet", { funding: { totalUsd: 0 }, headcount: 12, yearFounded: 2018 })], prefs), "startup_veteran").status).toBe("found");
+  });
+  it("does not count an unfunded company that was already old, or has no founding year", () => {
+    const p = person([at("5", "Agency", "Engineer", "2020-01", "2022-06")]);
+    expect(get(computeSignals(p, [co("5", "Agency", { funding: { totalUsd: 0 }, headcount: 12, yearFounded: 2005 })], prefs), "startup_veteran").status).toBe("none");
+    expect(get(computeSignals(p, [co("5", "Agency", { funding: { totalUsd: 0 }, headcount: 12 })], prefs), "startup_veteran").status).toBe("none");
+  });
+  it("counts overlapping roles at one company once", () => {
+    const p = person([at("1", "Proximal", "Engineer", "2020-01", "2023-01"), at("1", "Proximal", "Lead", "2021-01", "2024-01")]);
+    const r = get(computeSignals(p, [seedLean], prefs), "startup_veteran");
+    expect(r.evidence).toEqual(["4 years at Proximal: seed stage, 13 engineers."]); // 2020-01 to 2024-01, not 7 years
+  });
+  it("counts a funded pre-seed company even with one or two people listed, but not an unfunded one-person profile", () => {
+    const p = person([at("6", "Solo", "Engineer", "2019-01", "2023-01")]);
+    expect(get(computeSignals(p, [co("6", "Solo", { funding: { lastRound: "pre_seed" }, headcount: 1, engineers: 1 })], prefs), "startup_veteran").status).toBe("found");
+    expect(get(computeSignals(p, [co("6", "Solo", { funding: { totalUsd: 0 }, headcount: 1, engineers: 1, yearFounded: 2018 })], prefs), "startup_veteran").status).toBe("none");
+  });
+  it("uses company type only against unfunded companies, since real startups are often labelled Self-Employed", () => {
+    const p = person([at("6", "Solo", "Founder", "2019-01", "2023-01")]);
+    expect(get(computeSignals(p, [co("6", "Solo", { funding: { lastRound: "pre_seed" }, headcount: 20, engineers: 5, companyType: "Self-Employed" })], prefs), "startup_veteran").status).toBe("found");
+    expect(get(computeSignals(p, [co("6", "Solo", { funding: { totalUsd: 0 }, headcount: 20, engineers: 5, yearFounded: 2018, companyType: "Sole Proprietorship" })], prefs), "startup_veteran").status).toBe("none");
+  });
+  it("is unchecked when employers have no funding data, so it never counts against anyone", () => {
+    const p = person([at("1", "Proximal", "Engineer", "2022-01", "2025-01")]);
+    const r = computeSignals(p, [co("1", "Proximal")], prefs);
+    expect(get(r, "startup_veteran").status).toBe("unchecked");
+  });
+});
+
+describe("early stage and contract signals", () => {
+  it("measures company age at the date they joined", () => {
+    const p = person([at("1", "Young", "Engineer", "2019-06", "2021-01"), at("2", "Old", "Engineer", "2021-02", "2023-01")]);
+    const r = get(computeSignals(p, [co("1", "Young", { yearFounded: 2017 }), co("2", "Old", { yearFounded: 1999 })], prefs), "early_stage");
+    expect(r.status).toBe("found");
+    expect(r.evidence).toHaveLength(1);
+    expect(r.evidence[0]).toMatch(/2 years after it was founded/);
+  });
+  it("ignores a start date before the founding year", () => {
+    const p = person([at("1", "Odd", "Engineer", "2010-01", "2012-01")]);
+    expect(get(computeSignals(p, [co("1", "Odd", { yearFounded: 2015 })], prefs), "early_stage").status).toBe("none");
+  });
+  it("derives repeat contract hires from employment type when the profile has it", () => {
+    const p = person([job("Acme", "Contractor", "2018-01", "2018-12", { employmentType: "Contract" }), job("Acme", "Contractor", "2020-01", "2020-12", { employmentType: "Contract" }), job("Acme", "Contractor", "2022-01", "2022-12", { employmentType: "Contract" })]);
+    const r = get(computeSignals(p, none, prefs), "repeat_contract");
+    expect(r.status).toBe("found");
+    expect(r.evidence[0]).toMatch(/3 separate contract roles/);
+    expect(get(computeSignals(person([job("Acme", "Engineer", "2018-01", "2019-01")]), none, prefs), "repeat_contract").status).toBe("unchecked");
+  });
+});
+
 describe("content quality signal", () => {
   const p = person([job("Home", "Engineer", "2019-02")]);
   const check = (verdict: "builder" | "mixed" | "promotional" | "insufficient") => ({ content: { verdict, summary: "s", evidence: [{ quote: "q", why: "w" }], postsReviewed: 8, checkedAt: "2026-10-24T00:00:00Z", model: "m" } });
@@ -124,7 +195,7 @@ describe("signals score", () => {
     const s = computeSignals(c, none, prefs);
     // Only the profile signals are checkable here: boomerang, fast promotion, lean team (3 of 11).
     expect(s.checked).toBe(3);
-    expect(s.total).toBe(12);
+    expect(s.total).toBe(14);
     expect(s.score).toBe(Math.round((100 * 10) / 25)); // fast promotion earned 10 of boomerang 10 + promotion 10 + lean 5
   });
 });

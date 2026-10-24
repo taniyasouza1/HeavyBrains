@@ -10,6 +10,7 @@ export const PERSON_FIELDS = ["crustdata_person_id", "basic_profile", "social_ha
 const COMPANY_FIELDS = [
   "crustdata_company_id", "basic_info.name", "basic_info.primary_domain", "basic_info.description",
   "headcount.total", "locations.headquarters", "taxonomy.professional_network_industry",
+  "basic_info.year_founded", "basic_info.company_type", "basic_info.employee_count_range",
 ];
 
 export const HARD_LIMITS = { perPage: 25, pages: 2, maxProfiles: 100, maxCompanyIds: 100 };

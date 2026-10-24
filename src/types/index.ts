@@ -56,7 +56,7 @@ export interface CompanyFacts {
 
 export type SignalId =
   | "open_source" | "patents" | "citations" | "product_with_users" | "boomerang" | "fast_promotion"
-  | "lean_team" | "competitor" | "repeat_contract" | "promoted_in_downturn" | "closed_company" | "content_quality";
+  | "lean_team" | "early_stage" | "startup_veteran" | "competitor" | "repeat_contract" | "promoted_in_downturn" | "closed_company" | "content_quality";
 
 export interface SignalResult {
   id: SignalId;
@@ -124,6 +124,10 @@ export interface Employment {
   companyWebsite?: string;
   companyLocation?: string;
   companyHeadcount?: number;
+  /** From Person Enrich: e.g. "active" or "closed". */
+  companyStatus?: string;
+  /** From Person Enrich: e.g. "Full-time", "Contract". */
+  employmentType?: string;
 }
 
 export interface Candidate {
@@ -136,6 +140,7 @@ export interface Candidate {
   summary?: string;
   skills: string[];
   employment: Employment[];
+  education?: { school: string; degree?: string; field?: string; startYear?: number; endYear?: number }[];
   yearsExperience?: number;
   /** Provider freshness timestamp, if the source supplied one. */
   sourceTimestamp?: string;
@@ -150,6 +155,14 @@ export interface Company {
   industry?: string;
   location?: string;
   headcount?: number;
+  yearFounded?: number;
+  companyType?: string;
+  employeeRange?: string;
+  /** Percentage change in headcount over the trailing six months and year. */
+  headcountGrowth?: { sixMonths?: number; yoy?: number };
+  funding?: { totalUsd?: number; lastRound?: string; lastDate?: string };
+  /** Engineers on the team today, from the headcount breakdown by role. */
+  engineers?: number;
   source: "crustdata" | "demo";
 }
 
@@ -227,6 +240,8 @@ export interface DiscoveryResult {
   /** Per-candidate data from outside the profile, keyed by candidate id. */
   external?: Record<string, ExternalSignals>;
   companyFacts?: CompanyFacts;
+  /** How many people and companies were enriched with Crustdata Person Enrich and Company Enrich. */
+  enriched?: { people: number; companies: number };
   /** Estimated market pay per candidate, keyed by candidate id. */
   pay?: Record<string, PayEstimate>;
   fx?: FxTable;

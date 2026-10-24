@@ -11,7 +11,7 @@ import { BudgetControl, type BudgetFilter } from "./BudgetControl";
 import { splitList } from "@/lib/utils/text";
 import type { Candidate, CandidateMatch, PoolView, RecruiterPreferences } from "@/types";
 
-type Sort = "score" | "blend" | "pay" | "name" | "company";
+type Sort = "score" | "blend" | "startup" | "pay" | "name" | "company";
 
 export function currentCompany(c: Candidate) {
   return c.employment.find((e) => e.current)?.company;
@@ -60,6 +60,10 @@ export function ResultsList() {
     if (sort === "pay") {
       const mid = (id: string) => { const e = pay?.[id]; return e ? convert(e.mid, e.currency, prefs.budget?.currency ?? e.currency, fx) ?? e.mid : Infinity; };
       list = [...list].sort((a, b) => mid(a.candidateId) - mid(b.candidateId)); // cheapest first, unknown last
+    } else if (sort === "startup") {
+      // People with the most time in lean, seed-stage startups first; relevance breaks ties.
+      const vet = (m: CandidateMatch) => m.signals.results.find((r) => r.id === "startup_veteran")?.earned ?? 0;
+      list = [...list].sort((a, b) => vet(b) - vet(a) || b.score - a.score);
     } else if (sort === "blend") {
       // 70% relevance, 30% signals. A person whose signals could not be checked is ranked on relevance alone, not penalised.
       const blend = (m: CandidateMatch) => (m.signals.score == null ? m.score : 0.7 * m.score + 0.3 * m.signals.score);
@@ -102,7 +106,7 @@ export function ResultsList() {
         />
         <input aria-label="Search results" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, title, company…" className={cx(inputCls, "!w-60")} />
         <select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={selectCls}>
-          <option value="score">Sort: match score</option><option value="blend">Sort: relevance + signals</option>{pay && <option value="pay">Sort: est. pay, low to high</option>}<option value="name">Sort: name</option><option value="company">Sort: company</option>
+          <option value="score">Sort: match score</option><option value="blend">Sort: relevance + signals</option><option value="startup">Sort: startup veterans first</option>{pay && <option value="pay">Sort: est. pay, low to high</option>}<option value="name">Sort: name</option><option value="company">Sort: company</option>
         </select>
         <select aria-label="Filter by criterion" value={must} onChange={(e) => setMust(e.target.value)} className={cx(selectCls, "max-w-56")}>
           <option value="">Any evidence</option>
@@ -169,6 +173,7 @@ function Row({ i, m, c, selected, shortlisted, delta, feedback, payInfo, onOpen,
           {m.inUsualPool && <Chip>Usual pool</Chip>}
           {m.excluded && <Chip tone="err">Excluded company</Chip>}
           {m.alreadyEvaluated && <Chip tone="warn">Already evaluated</Chip>}
+          {m.signals.results.some((r) => r.id === "startup_veteran" && r.status === "found") && <Chip tone="accent" title="Spent a year or more at a lean, seed-stage startup">Startup veteran</Chip>}
           {feedback && <Chip tone="accent">{feedback.replace(/_/g, " ")}</Chip>}
         </div>
         <p className="text-xs text-muted">{c.title ?? "Title not available"}{currentCompany(c) ? ` · ${currentCompany(c)}` : ""}{c.location ? ` · ${c.location}` : ""}</p>

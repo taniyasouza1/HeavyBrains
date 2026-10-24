@@ -1,5 +1,5 @@
 import "server-only";
-import type { Candidate, Company, DataMode, FxTable, DiscoveryResult, RecruiterPreferences, RoleCriteria } from "@/types";
+import type { Candidate, Company, DataMode, Employment, FxTable, DiscoveryResult, RecruiterPreferences, RoleCriteria } from "@/types";
 import { DEMO_CANDIDATES, DEMO_COMPANIES } from "@/lib/demo/dataset";
 import { CrustdataError, isLiveConfigured } from "@/lib/crustdata/client";
 import { HARD_LIMITS, liveProvider, type Filter } from "@/lib/crustdata/provider";
@@ -18,6 +18,12 @@ export interface DiscoveryRequest {
   criteria: RoleCriteria;
   preferences: RecruiterPreferences;
   limit: number;
+}
+
+/** Crustdata Person Enrich and Company Enrich, injected so tests run without credits. */
+export interface EnrichRun {
+  people(profileUrls: string[]): Promise<Map<string, Candidate>>;
+  companies(companyIds: string[]): Promise<Company[]>;
 }
 
 /** Set when salary estimates are wanted. The fetchers are injected so tests can run without keys. */
@@ -151,8 +157,12 @@ const agentFailure = (e: unknown) =>
  * Brief Analyst -> Search Strategist -> (retrieval) -> Evidence Reviewers -> Briefing Writer.
  * Code orchestrates them. Scores still come only from quoted profile text, so AI cannot raise a score without a verifiable quote.
  */
-async function runCore(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, ai?: AiRun): Promise<DiscoveryResult> {
-  if (!ai) return retrieve(req, emit);
+async function runCore(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, ai?: AiRun, enrich?: EnrichRun): Promise<DiscoveryResult> {
+  if (!ai) {
+    const plain = await retrieve(req, emit);
+    if (enrich) await enrichTop(plain, req.criteria, req.preferences, emit, enrich);
+    return plain;
+  }
 
   const agents: string[] = [];
   const warnings: string[] = [];
@@ -186,6 +196,7 @@ async function runCore(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, 
 
   const result = await retrieve({ ...req, criteria }, emit, plan);
   result.warnings.push(...warnings);
+  if (enrich) await enrichTop(result, criteria, req.preferences, emit, enrich); // before the reviewers, so they read the fuller profiles
 
   if (result.candidates.length) {
     emit({ stage: "Evidence Reviewers", detail: `Reading ${result.candidates.length} profiles for evidence keywords missed`, agent: true });
@@ -239,8 +250,78 @@ async function addPay(result: DiscoveryResult, emit: (e: ProgressEvent) => void,
  * Brief Analyst -> Search Strategist -> (retrieval) -> Evidence Reviewers -> Briefing Writer.
  * With `pay`, market pay is estimated for each candidate afterwards.
  */
-export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, ai?: AiRun, pay?: PayRun): Promise<DiscoveryResult> {
-  const result = await runCore(req, emit, ai);
+export async function runDiscovery(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, ai?: AiRun, pay?: PayRun, enrich?: EnrichRun): Promise<DiscoveryResult> {
+  const result = await runCore(req, emit, ai, enrich);
   if (pay && result.candidates.length) await addPay(result, emit, pay);
   return result;
+}
+
+const MAX_EMPLOYERS = 40;
+const ENRICH_TOP = 10; // enrich only the strongest candidates: about 1 credit per person and 2 per employer
+
+/** Adds what search does not return to a candidate. Keeps what search already had; fills gaps and adds missing roles. */
+export function mergeEmployment(base: Employment[], extra: Employment[]): Employment[] {
+  const key = (e: Employment) => normalizeName(e.company);
+  const month = (e: Employment) => e.startDate?.slice(0, 7) ?? "";
+  const used = new Set<number>();
+  const merged = base.map((b) => {
+    const i = extra.findIndex((x, idx) => !used.has(idx) && key(x) === key(b) && (month(x) === month(b) || (x.title ?? "") === (b.title ?? "")));
+    if (i < 0) return b;
+    used.add(i);
+    const x = extra[i];
+    return { ...b, description: b.description ?? x.description, companyId: b.companyId ?? x.companyId, companyStatus: x.companyStatus ?? b.companyStatus, employmentType: x.employmentType ?? b.employmentType, startDate: b.startDate ?? x.startDate, endDate: b.endDate ?? x.endDate };
+  });
+  return [...merged, ...extra.filter((_, idx) => !used.has(idx))];
+}
+
+export function mergeCandidate(base: Candidate, e: Candidate): Candidate {
+  return {
+    ...base,
+    summary: base.summary ?? e.summary,
+    skills: [...new Set([...base.skills, ...e.skills])],
+    education: e.education?.length ? e.education : base.education,
+    employment: mergeEmployment(base.employment, e.employment),
+    sourceTimestamp: e.sourceTimestamp ?? base.sourceTimestamp,
+  };
+}
+
+/** Person Enrich and Company Enrich for the top candidates. Supplementary: any failure becomes a warning, never a failed search. */
+async function enrichTop(result: DiscoveryResult, criteria: RoleCriteria, prefs: RecruiterPreferences, emit: (e: ProgressEvent) => void, enrich: EnrichRun) {
+  if (result.mode !== "live" || !result.candidates.length) return;
+  const top = analyzePool(result, criteria, prefs).filter((m) => !m.excluded).slice(0, ENRICH_TOP);
+  const ids = new Set(top.map((m) => m.candidateId));
+  const targets = result.candidates.filter((c) => ids.has(c.id) && c.profileUrl && /linkedin\.com\/in\//i.test(c.profileUrl));
+  if (!targets.length) return;
+  let people = 0, companies = 0;
+
+  emit({ stage: "Crustdata Person Enrich", detail: `Full career history for the top ${targets.length} candidates` });
+  try {
+    const got = await enrich.people(targets.map((c) => c.profileUrl!));
+    result.candidates = result.candidates.map((c) => {
+      const e = c.profileUrl ? got.get(c.profileUrl) : undefined;
+      if (!e) return c;
+      people++;
+      return mergeCandidate(c, e);
+    });
+  } catch (e) {
+    result.warnings.push(`Person Enrich failed (${e instanceof CrustdataError ? e.message : "unknown error"}). Candidates keep their search-level profiles.`);
+  }
+
+  // Every employer in the top candidates' histories, because the startup signals look at past jobs too. Capped to bound cost (2 credits each).
+  const employerIds = [...new Set(result.candidates.filter((c) => ids.has(c.id)).flatMap((c) => c.employment.filter((e) => e.companyId).map((e) => e.companyId!)))].slice(0, MAX_EMPLOYERS);
+  if (employerIds.length) {
+    emit({ stage: "Crustdata Company Enrich", detail: `Funding, team size and founding year for ${employerIds.length} employers` });
+    try {
+      const got = await enrich.companies(employerIds);
+      const byId = new Map(result.companies.map((c) => [c.id, c]));
+      for (const g of got) {
+        byId.set(g.id, { ...byId.get(g.id), ...Object.fromEntries(Object.entries(g).filter(([, v]) => v !== undefined)) } as Company);
+        companies++;
+      }
+      result.companies = [...byId.values()];
+    } catch (e) {
+      result.warnings.push(`Company Enrich failed (${e instanceof CrustdataError ? e.message : "unknown error"}). Employers keep their search-level profiles.`);
+    }
+  }
+  result.enriched = { people, companies };
 }

@@ -29,6 +29,8 @@ function normalizeEmployment(raw: NonNullable<RawPerson["experience"]>, current:
       companyWebsite: clean(e.company_website),
       companyLocation: clean(e.company_hq_location),
       companyHeadcount: e.company_headcount_latest ?? undefined,
+      companyStatus: clean(e.company_status),
+      employmentType: clean(e.employment_type),
     }];
   });
 }
@@ -59,6 +61,10 @@ export function normalizePerson(input: unknown): Candidate | null {
     summary: clean(p.basic_profile?.summary),
     skills: (p.skills?.professional_network_skills ?? []).map((s) => s.trim()).filter(Boolean),
     employment,
+    education: (p.education?.schools ?? []).flatMap((s) => {
+      const school = clean(s.school);
+      return school ? [{ school, degree: clean(s.degree), field: clean(s.field_of_study), startYear: s.start_year ?? undefined, endYear: s.end_year ?? undefined }] : [];
+    }),
     yearsExperience: p.experience?.years_of_experience_raw ?? undefined,
     sourceTimestamp: clean(p.updated_at) ?? clean(p.basic_profile?.last_updated),
     source: "crustdata",
@@ -79,6 +85,12 @@ export function normalizePeople(raw: unknown[]): NormalizeReport<Candidate> {
   return { items, rejected };
 }
 
+function growth(g?: Record<string, number | null | undefined> | null): { sixMonths?: number; yoy?: number } | undefined {
+  if (!g) return undefined;
+  const sixMonths = g.six_months ?? g["6m"] ?? undefined, yoy = g.yoy ?? g["12m"] ?? undefined;
+  return sixMonths != null || yoy != null ? { sixMonths, yoy } : undefined;
+}
+
 export function normalizeCompany(input: unknown): Company | null {
   const parsed = RawCompanySchema.safeParse(input);
   if (!parsed.success) return null;
@@ -94,6 +106,13 @@ export function normalizeCompany(input: unknown): Company | null {
     industry: clean(c.taxonomy?.professional_network_industry),
     location: clean(c.locations?.headquarters),
     headcount: c.headcount?.total ?? undefined,
+    yearFounded: c.basic_info?.year_founded ?? undefined,
+    companyType: clean(c.basic_info?.company_type),
+    employeeRange: clean(c.basic_info?.employee_count_range),
+    // Company Enrich names the windows six_months / yoy; Company Search names them 6m / 12m.
+    headcountGrowth: growth(c.headcount?.growth_percent),
+    engineers: c.headcount?.by_role_absolute?.Engineering ?? undefined,
+    funding: c.funding ? { totalUsd: c.funding.total_investment_usd ?? undefined, lastRound: clean(c.funding.last_round_type), lastDate: clean(c.funding.last_fundraise_date) } : undefined,
     source: "crustdata",
   };
 }

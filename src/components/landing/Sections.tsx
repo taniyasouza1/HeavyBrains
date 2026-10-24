@@ -53,6 +53,76 @@ function Heading({ children, sub }: { children: React.ReactNode; sub?: string })
 
 const reveal = { initial: { opacity: 0, y: 40 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: "0px 0px -10% 0px" } } as const;
 
+type Status = "Live" | "Opt-in" | "Needs data";
+const STATUS_STYLE: Record<Status, string> = { Live: "bg-[#5eead4]/20 text-[#7ff0dc]", "Opt-in": "bg-[#f9b407]/20 text-[#f9c840]", "Needs data": "bg-white/10 text-[#aab3dc]" };
+
+const METRIC_GROUPS: { title: string; sub: string; items: { name: string; text: string; status: Status }[] }[] = [
+  {
+    title: "Relevance",
+    sub: "Does the profile show the work you asked for? One score, 0 to 100, built only from quoted profile text.",
+    items: [
+      { name: "Evidence from real work", text: "Role descriptions count most, then the summary, job titles, headline and skills list. Skills alone never count as proof.", status: "Live" },
+      { name: "What matters most to you", text: "Must-have, nice-to-have and context criteria, each with an importance, set from your brief and editable.", status: "Live" },
+      { name: "Evidence AI reviewers find", text: "Reviewers read profiles for proof the keywords missed. It counts only if their quote appears word for word in the profile.", status: "Live" },
+    ],
+  },
+  {
+    title: "Career signals",
+    sub: "How someone's career looks, scored separately so relevance stays pure. Signals that cannot be checked are left out, not counted as zero.",
+    items: [
+      { name: "Startup veteran", text: "Years at pre-seed or seed-stage startups with a lean engineering team of 15 or fewer. Candidates with the most of it can be ranked first.", status: "Live" },
+      { name: "Joined companies while young", text: "Started within a few years of the company's founding.", status: "Live" },
+      { name: "Lean-team employers", text: "Time spent at small companies.", status: "Live" },
+      { name: "Rehired by the same company", text: "Left, then was asked back.", status: "Live" },
+      { name: "Fast promotion", text: "A step up in title within one company, and how quickly.", status: "Live" },
+      { name: "Repeat contract hires", text: "The same company engaging them again and again.", status: "Live" },
+      { name: "Competitor experience", text: "The same kind of work at a rival you name.", status: "Live" },
+    ],
+  },
+  {
+    title: "Beyond the CV",
+    sub: "Evidence from outside the profile.",
+    items: [
+      { name: "Quality of what they post", text: "An AI reviewer reads recent LinkedIn posts for real technical substance, not hype. Quotes are checked.", status: "Opt-in" },
+      { name: "Open-source impact", text: "Stars times merged pull requests across their repositories.", status: "Needs data" },
+      { name: "Patents and citations", text: "Patents cited in papers and how often their papers are cited.", status: "Needs data" },
+      { name: "Built products with real users", text: "Shipped something people use.", status: "Needs data" },
+      { name: "Promoted in a hard period", text: "Moved up while the company was struggling.", status: "Needs data" },
+      { name: "Left a company that then closed", text: "Context, not merit: leaving a failing company says nothing against someone.", status: "Needs data" },
+    ],
+  },
+];
+
+export function Metrics() {
+  return (
+    <section className="py-12 md:py-20" aria-label="How candidates are ranked">
+      <Heading sub="Every score links to the quote behind it. Nothing here uses age, gender, nationality or any protected trait.">How candidates are ranked</Heading>
+      <div className="mx-auto mt-12 grid max-w-[1280px] gap-5 px-4 md:px-10 lg:grid-cols-3">
+        {METRIC_GROUPS.map((g, gi) => (
+          <motion.div key={g.title} {...reveal} transition={{ duration: 0.7, ease: EASE, delay: gi * 0.1 }}
+            className="rounded-3xl bg-gradient-to-br from-[#323c6c] to-[#222950] p-7 shadow-[0_30px_50px_-30px_rgba(18,22,58,0.8)]">
+            <h3 className="text-2xl font-medium">{g.title}</h3>
+            <p className="mt-1 text-[15px] text-[#b6bee3]">{g.sub}</p>
+            <ul className="mt-5 space-y-4">
+              {g.items.map((m) => (
+                <li key={m.name}>
+                  <p className="flex flex-wrap items-center gap-2 text-[16px] font-medium">
+                    {m.name}<span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[m.status]}`}>{m.status}</span>
+                  </p>
+                  <p className="text-[15px] leading-snug text-[#b6bee3]">{m.text}</p>
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        ))}
+      </div>
+      <p className="mx-auto mt-5 max-w-[1280px] px-4 text-sm md:px-10" style={{ color: "#33407a" }}>
+        <b>Live</b> works today. <b>Opt-in</b> runs only when you ask, because it costs credits. <b>Needs data</b> is built but waits on a connected data source.
+      </p>
+    </section>
+  );
+}
+
 export function FieldGrid({ current }: { current?: string }) {
   return (
     <section className="py-12 md:py-20" aria-label="Fields">

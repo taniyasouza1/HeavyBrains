@@ -18,6 +18,8 @@ export const RawEmploymentSchema = z.looseObject({
   company_professional_network_industry: str,
   company_hq_location: str,
   company_headcount_latest: z.number().nullish(),
+  company_status: str,
+  employment_type: str,
 });
 
 export const RawPersonSchema = z.looseObject({
@@ -47,6 +49,11 @@ export const RawPersonSchema = z.looseObject({
     })
     .nullish(),
   skills: z.looseObject({ professional_network_skills: z.array(z.string()).nullish() }).nullish(),
+  education: z
+    .looseObject({
+      schools: z.array(z.looseObject({ school: str, degree: str, field_of_study: str, start_year: z.number().nullish(), end_year: z.number().nullish() })).nullish(),
+    })
+    .nullish(),
   updated_at: str,
 });
 
@@ -59,9 +66,10 @@ export const PersonSearchResponseSchema = z.looseObject({
 export const RawCompanySchema = z.looseObject({
   crustdata_company_id: z.union([z.number(), z.string()]),
   basic_info: z
-    .looseObject({ name: str, primary_domain: str, description: str })
+    .looseObject({ name: str, primary_domain: str, description: str, year_founded: z.number().nullish(), company_type: str, employee_count_range: str })
     .nullish(),
-  headcount: z.looseObject({ total: z.number().nullish() }).nullish(),
+  headcount: z.looseObject({ total: z.number().nullish(), growth_percent: z.record(z.string(), z.number().nullish()).nullish(), by_role_absolute: z.record(z.string(), z.number().nullish()).nullish() }).nullish(),
+  funding: z.looseObject({ total_investment_usd: z.number().nullish(), last_round_type: str, last_fundraise_date: str }).nullish(),
   locations: z.looseObject({ headquarters: str, country: str }).nullish(),
   taxonomy: z.looseObject({ professional_network_industry: str }).nullish(),
 });

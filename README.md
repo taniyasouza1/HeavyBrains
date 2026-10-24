@@ -33,12 +33,16 @@ Start to finish, without a person:
 5. **Writes a briefing** of the strongest candidates, with quotes, flagging people outside your usual pool.
 6. **Finds blind spots.** People outside the companies you usually search whose work evidence supports the brief,
    and, when nobody qualifies, a step-by-step explanation of which rule filtered everyone out.
-7. **Adds signals beyond role fit** (kept separate from relevance): rehired by the same company, fast promotion at one
-   company, lean-team employers, competitor experience, plus an optional AI review of the quality of what they post.
-8. **Has the budget machinery ready.** Pay ranges per person, a budget per hire, fits / stretch / over marking, filters,
+7. **Enriches the strongest candidates** with Crustdata Person Enrich (full dated career history, education, summary) and
+   Company Enrich (founding year, funding stage, engineers on the team), so the next steps read fuller profiles.
+8. **Adds signals beyond role fit** (kept separate from relevance, with their own 0-100 score): **startup veteran** (years at
+   pre-seed or seed-stage startups with a lean engineering team, and a sort that ranks these people first), joined companies
+   while young, rehired by the same company, fast promotion, lean-team employers, repeat contract hires, competitor
+   experience, plus an optional AI review of the quality of what they post. The landing page lists every metric.
+9. **Has the budget machinery ready.** Pay ranges per person, a budget per hire, fits / stretch / over marking, filters,
    a Pay tab and a shortlist cost summary are built. **No salary data source is connected right now**, so none of this
    shows until one is (see below).
-9. **Supports the decision:** interactive candidate card, shortlist with notes and follow-ups, budget summary, CSV export,
+10. **Supports the decision:** interactive candidate card, shortlist with notes and follow-ups, budget summary, CSV export,
    saved projects.
 
 **Where it still needs a person:**
@@ -54,10 +58,11 @@ Start to finish, without a person:
 | Piece | Status |
 |---|---|
 | Brief Analyst, Search Strategist, Evidence Reviewers, Briefing Writer | Run live against Anthropic and Crustdata (including a full job posting) |
-| Evidence engine, quote verification, blind spots, signals, pay logic | Covered by 81 automated tests, using a fake model and fake network calls |
+| Crustdata Person Enrich and Company Enrich | Run live: 10 people and 39 employers enriched in a 51-second search |
+| Evidence engine, quote verification, blind spots, signals, enrich merging, pay logic | Covered by 101 automated tests, using a fake model and fake network calls |
 | Pay estimates and budget | Logic, UI and tests are built, but **no salary data source is connected**, so it is dormant |
 | Post-quality review (Crustdata Social Post API) | Built and tested; **not yet run live** (the endpoint must be enabled on your Crustdata account) |
-| Open-source, patents, citations, product-with-users, closed-company, downturn-promotion, repeat-contract signals | Scoring logic built and tested; **not connected to a data source yet** (planned: your Supabase) |
+| Open-source, patents, citations, product-with-users, closed-company, downturn-promotion signals | Scoring logic built and tested; **not connected to a data source yet** (planned: your Supabase) |
 
 ## What it could do in the future
 
@@ -102,7 +107,7 @@ Run it in **demo mode** with no keys at all: choose **DEMO DATA** in the header.
 The header always shows `LIVE DATA` or `DEMO DATA` and `AI AGENTS ON/OFF`; there is no silent fallback between them.
 
 ```bash
-npm test            # 81 tests
+npm test            # 101 tests
 npm run typecheck
 npm run lint
 npm run build && npm start
@@ -124,7 +129,9 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
                          │  streamed progress     ├─ Search Strategist ─────────────────────────► Anthropic API
  Project state:          │  (NDJSON)              ├─ retrieve ──────────────────────────────────► Crustdata
  localStorage            │                        │   POST /person/search, /company/search
- (per browser)           │                        ├─ Evidence Reviewers (parallel batches of 5) ─► Anthropic API
+ (per browser)           │                        ├─ Enrich top 10 people + their employers ───► Crustdata /person/enrich,
+                         │                        │   (full career, funding, engineers)          /company/enrich
+                         │                        ├─ Evidence Reviewers (parallel batches of 5) ─► Anthropic API
                          │                        │   quotes verified verbatim, or discarded
  Scoring runs in the     │                        ├─ Briefing Writer ───────────────────────────► Anthropic API
  browser from the        │                        └─ Pay estimator (no source connected yet) ───► Frankfurter FX
@@ -140,7 +147,10 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
   weights it by tier and importance, and sums to 0–100. Agents can add evidence only through a verified quote, and it is
   credited exactly like a keyword hit on that field. Click any score to see the quote.
 - **Crustdata calls:** `/person/search` (candidate pool, several queries per search), `/company/search` (employer
-  profiles), and `/social_post/search` (post review, one person at a time, only when you ask; 0.5 credits per post).
+  profiles with founding year and size range), `/person/enrich` (the top 10 candidates: dated career history, education,
+  summary; about 1 credit each), `/company/enrich` (their employers, capped at 40: funding stage, engineers, growth; about
+  2 credits each, in batches of 5), and `/social_post/search` (post review, one person at a time, only when you ask; 0.5
+  credits per post). A full AI search with enrichment cost about 144 credits and 51 seconds.
   Server-side only; a 429 is retried once, and the 30 requests/minute limit is surfaced as an error. Details: `docs/crustdata-integration.md`.
 - **Other tools:** Frankfurter (free exchange rates) for comparing pay with a budget in another currency.
 - **State:** projects, shortlist, notes, budget and saved content checks live in the browser's `localStorage`
@@ -171,6 +181,13 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
 
 **What didn't, or needed changing**
 
+- **The "startup veteran" metric needed three rounds of fixes, each found only on real data.** The first version summed
+  overlapping roles (6.9 years at one company), credited one-person "companies" and unfunded shells, and then, once
+  tightened, wrongly excluded real startups that LinkedIn labels "Self-Employed". Unit tests passed every time. Scoring a
+  real result is what exposed them.
+- **Company Enrich returned a 500 for 10 ids at once and worked for 5**, which we found by probing. It now sends batches of
+  5 and splits a failing batch so one bad record cannot cost the others.
+
 - **The first extractor was keyword rules** (a fixed list of concepts, software roles only). It is still the no-key
   fallback, but it could not read a real job posting. The Brief Analyst replaced it as the default.
 - **A free per-person salary API does not exist.** We checked: individual pay is private, and company-and-role data is
@@ -193,5 +210,7 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
 - Profile text is self-reported. Scores are relevance estimates from that text, not a measure of ability or hiring success.
 - Crustdata search returns no profile summary or skills by default and no freshness timestamp; see `docs/crustdata-integration.md`.
 - Pay estimates are dormant until a salary source is connected.
+- "Startup veteran" uses a company's funding stage and team size **today**; Crustdata returned no funding-round dates, so it shows time at a
+  lean seed-stage company, not proof they joined before its first round.
 - Reviews are capped at 40 candidates per search to bound cost.
 - The unverified items in the status table above.
