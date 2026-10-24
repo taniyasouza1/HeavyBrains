@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0b0c0f;
+  --panel: #121419;
+  --panel-2: #181b21;
+  --line: #262a33;
+  --text: #e9ebef;
+  --muted: #8d94a2;
+  --accent: #5fb3ff;
+  --blind: #c4a1ff;
+  --ok: #4ade80;
+  --warn: #f5a623;
+  --err: #f87171;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel2: var(--panel-2);
+  --color-line: var(--line);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-blind: var(--blind);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans), system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+@keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.anim-slide { animation: slide-in 0.18s ease-out; }
+.anim-fade { animation: fade-in 0.2s ease-out; }
+.skeleton { background: linear-gradient(90deg, var(--panel) 25%, var(--panel-2) 50%, var(--panel) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .anim-slide, .anim-fade, .skeleton { animation: none; } }
+
+.react-flow__attribution { display: none; }
+.react-flow { --xy-background-color: var(--bg); --xy-edge-stroke-default: #3a404c; --xy-controls-button-background-color: var(--panel-2); --xy-controls-button-color: var(--text); --xy-controls-button-border-color: var(--line); --xy-minimap-background-color: var(--panel); }
