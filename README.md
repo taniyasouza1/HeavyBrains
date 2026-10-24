@@ -121,6 +121,8 @@ Open a candidate for the tabbed card (Overview, Evidence, Signals, Career, Notes
 
 ## How it's built
 
+> **Diagrams:** the full orchestration (flowchart, sequence, and where a score point comes from) is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). GitHub renders them in place.
+
 ```
  Browser (Next.js app)                         Server (Next.js route handlers)                 Outside services
  ─────────────────────                         ────────────────────────────────                ────────────────
