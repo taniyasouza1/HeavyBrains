@@ -246,6 +246,10 @@ export interface DiscoveryResult {
   /** Per-candidate data from outside the profile, keyed by candidate id. */
   external?: Record<string, ExternalSignals>;
   companyFacts?: CompanyFacts;
+  /** Crustdata credits this search used, measured from the account balance before and after. */
+  creditsUsed?: number;
+  /** Set by the server: whether this came from the 24-hour result cache, and when it was retrieved. */
+  cache?: { hit: boolean; cachedAt: string };
   /** How many people and companies were enriched with Crustdata Person Enrich and Company Enrich. */
   enriched?: { people: number; companies: number };
   /** Estimated market pay per candidate, keyed by candidate id. */

@@ -38,7 +38,10 @@ interface Ctx {
   stateOf: (id: string) => CandidateState;
   patchCandidate: (id: string, patch: Partial<CandidateState>) => void;
   run: RunState;
-  runDiscovery: () => Promise<void>;
+  /** `refresh` skips the 24-hour result cache. */
+  runDiscovery: (opts?: { refresh?: boolean }) => Promise<void>;
+  /** Crustdata credits left, or null when unknown or in demo mode. */
+  credits: number | null;
   setMode: (m: DataMode) => void;
   setAi: (on: boolean) => void;
   /** On-demand LinkedIn post review for one candidate. Costs Crustdata credits, so it never runs automatically. */
@@ -61,9 +64,17 @@ export const useApp = () => {
   return c;
 };
 
+async function fetchCredits(): Promise<number | null> {
+  try {
+    const j = await (await fetch("/api/credits", { cache: "no-store" })).json();
+    return typeof j.credits === "number" ? j.credits : null;
+  } catch { return null; }
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
+  const [credits, setCredits] = useState<number | null>(null);
   const [projects, setProjects] = useState<SourcingProject[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [run, setRun] = useState<RunState>({ phase: "idle" });
@@ -81,6 +92,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try { st = await (await fetch("/api/status")).json(); } catch { /* keep demo defaults */ }
       if (cancelled) return;
       setStatus(st);
+      if (st.liveConfigured) void fetchCredits().then((c) => { if (!cancelled) setCredits(c); });
       let list = localStorageStore.list();
       let active = localStorageStore.getActiveId();
       if (!list.length) {
@@ -214,7 +226,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [project, update]);
 
-  const runDiscovery = useCallback(async () => {
+  const runDiscovery = useCallback(async (opts?: { refresh?: boolean }) => {
     if (!project || running.current) return; // blocks duplicate submissions
     running.current = true;
     const useAi = aiEnabled(project, status);
@@ -233,9 +245,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setRun({ phase: "running", steps: [] });
+      const creditsBefore = project.mode === "live" && status?.liveConfigured ? await fetchCredits() : null;
+      let finished_: DiscoveryResult | undefined;
       const res = await fetch("/api/discovery", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: project.mode, criteria: criteria.roleTitle ? criteria : { ...criteria, roleTitle: "Role" }, preferences: project.preferences, limit: 50, ai: useAi, pay: !!status?.payConfigured, enrich: project.mode === "live", reanalyze, roleDescription: project.roleDescription }),
+        body: JSON.stringify({ mode: project.mode, criteria: criteria.roleTitle ? criteria : { ...criteria, roleTitle: "Role" }, preferences: project.preferences, limit: 50, ai: useAi, pay: !!status?.payConfigured, enrich: project.mode === "live", refresh: !!opts?.refresh, reanalyze, roleDescription: project.roleDescription }),
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
@@ -264,12 +278,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             finished = true;
           } else if (ev.type === "result") {
             const r = ev.result as DiscoveryResult;
+            finished_ = r;
             // Criteria written by the Brief Analyst replace the stored ones, so scores and chips match what the search used.
             update((p) => ({ ...p, result: r, ...(r.criteria ? { criteria: r.criteria, briefAnalyzed: p.roleDescription } : {}) }));
             setView("all");
             setRun({ phase: "done", steps });
             finished = true;
           }
+        }
+      }
+      // What the search really cost: the balance before minus the balance after. A cached result costs nothing.
+      if (finished && finished_ && creditsBefore != null) {
+        const after = await fetchCredits();
+        if (after != null) {
+          setCredits(after);
+          const used = finished_.cache?.hit ? 0 : Math.max(0, Math.round((creditsBefore - after) * 10) / 10);
+          update((p) => (p.result ? { ...p, result: { ...p.result, creditsUsed: used } } : p));
         }
       }
       if (!finished) setRun({ phase: "error", code: "interrupted", message: "The connection ended before discovery finished." });
@@ -282,7 +306,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value: Ctx = {
     hydrated, status, projects, project, update, createProject, openProject, deleteProject, matches, candidates, companies,
-    companyByName, stateOf, patchCandidate, run, runDiscovery, setMode, setAi, checkContent, contentState, selection, select, view, setView, showExcluded,
+    companyByName, stateOf, patchCandidate, run, runDiscovery, credits, setMode, setAi, checkContent, contentState, selection, select, view, setView, showExcluded,
     setShowExcluded, rankDelta,
   };
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

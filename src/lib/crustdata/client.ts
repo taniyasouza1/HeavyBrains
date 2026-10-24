@@ -54,3 +54,21 @@ export async function crustdataPost(path: string, body: unknown, attempt = 0): P
     clearTimeout(timer);
   }
 }
+
+/** Low-level GET, for free account endpoints such as /account/credits. Same headers and error mapping as crustdataPost. */
+export async function crustdataGet(path: string): Promise<unknown> {
+  const key = process.env.CRUSTDATA_API_KEY?.trim();
+  if (!key) throw new CrustdataError("CRUSTDATA_API_KEY is not set.", "not_configured");
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      headers: { Authorization: `Bearer ${key}`, "x-api-version": API_VERSION },
+      signal: AbortSignal.timeout(TIMEOUT_MS), cache: "no-store",
+    });
+    if (res.status === 401 || res.status === 403) throw new CrustdataError(`Crustdata rejected the request (${res.status}).`, "auth", res.status);
+    if (!res.ok) throw new CrustdataError(`Crustdata returned an error (${res.status}).`, "upstream", res.status);
+    return await res.json();
+  } catch (e) {
+    if (e instanceof CrustdataError) throw e;
+    throw new CrustdataError("Could not reach Crustdata.", "upstream");
+  }
+}

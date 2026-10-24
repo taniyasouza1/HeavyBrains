@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function Workspace({ pathname, children }: { pathname: string; children: React.ReactNode }) {
-  const { hydrated, project, status, setMode, setAi, run, runDiscovery, selection, update } = useApp();
+  const { hydrated, project, status, setMode, setAi, run, runDiscovery, credits, selection, update } = useApp();
   const shortlistCount = project ? Object.values(project.candidateState).filter((s) => s.shortlisted).length : 0;
   const resultMode = project?.result?.mode;
   const mode = project?.mode ?? "demo";
@@ -94,6 +94,11 @@ function Workspace({ pathname, children }: { pathname: string; children: React.R
                 </button>
               ))}
             </div>
+            {mode === "live" && credits != null && (
+              <span title="Crustdata credits left on your account. A full AI search with enrichment uses about 150." className="rounded-md border border-line bg-panel px-2.5 py-1 text-[11px] font-semibold tracking-wider tabular-nums text-muted">
+                {Math.round(credits).toLocaleString("en-US")} CREDITS
+              </span>
+            )}
             <button
               onClick={() => setAi(!ai)} aria-pressed={ai}
               title={ai ? "AI agents read your brief, widen the search, review evidence and write a briefing. Click to turn off." : "Keyword rules only. Click to turn AI agents on."}
@@ -102,7 +107,7 @@ function Workspace({ pathname, children }: { pathname: string; children: React.R
               {ai ? "AI AGENTS ON" : "AI AGENTS OFF"}
             </button>
             {resultMode && resultMode !== mode && <Chip tone="warn" title="The displayed results were retrieved in a different mode. Re-run discovery to refresh.">results: {resultMode}</Chip>}
-            <Button variant="primary" size="sm" onClick={() => void runDiscovery()} disabled={!project || run.phase === "running" || !!liveBlocked || !!aiBlocked}
+            <Button variant="primary" size="sm" onClick={() => void runDiscovery({ refresh: true })} disabled={!project || run.phase === "running" || !!liveBlocked || !!aiBlocked}
               title={liveBlocked ? "Live mode needs CRUSTDATA_API_KEY on the server" : aiBlocked ? "AI agents need ANTHROPIC_API_KEY on the server" : undefined}>
               {run.phase === "running" ? "Running…" : project?.result ? "Re-run discovery" : "Run discovery"}
             </Button>

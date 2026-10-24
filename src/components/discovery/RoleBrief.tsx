@@ -44,7 +44,7 @@ export function RoleBrief({ onFind }: { onFind: () => void }) {
       />
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button variant="primary" onClick={() => { extract(); onFind(); }} disabled={!project.roleDescription.trim()}><Search size={14} aria-hidden /> Find people</Button>
-        <p className="text-xs text-muted">{aiEnabled(project, status) ? "AI agents read your brief, search, review the evidence and write a briefing." : "Criteria are read from your brief with fixed keyword rules. Turn AI agents on in the header for deeper matching."}</p>
+        <p className="text-xs text-muted">{aiEnabled(project, status) ? "AI agents read your brief, search, review the evidence and write a briefing." : "Criteria are read from your brief with fixed keyword rules. Turn AI agents on in the header for deeper matching."}{project.mode === "live" && " A live search uses about 150 Crustdata credits; repeating it within 24 hours is free."}</p>
       </div>
     </Section>
   );

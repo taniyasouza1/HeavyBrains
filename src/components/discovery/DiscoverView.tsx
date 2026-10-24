@@ -62,6 +62,9 @@ export function DiscoverView() {
             {criteria.criteria.map((c) => <li key={c.id}><Chip tone={TONE[c.tier]}>{c.label}</Chip></li>)}
             {criteria.location && <li><Chip>{criteria.location}</Chip></li>}
           </ul>
+          {project.result?.creditsUsed != null && (
+            <p className="mt-2 text-xs text-muted">{project.result.creditsUsed === 0 ? "This search cost no credits." : `This search used about ${Math.round(project.result.creditsUsed)} Crustdata credits.`}</p>
+          )}
           {project.result?.warnings.map((w, i) => <p key={i} className="mt-2 text-xs text-warn">{w}</p>)}
         </Section>
       )}
