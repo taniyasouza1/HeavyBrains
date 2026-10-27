@@ -22,6 +22,9 @@ development environment, so none is used. Docs: <https://docs.crustdata.com/> (A
 
 Verified filter paths: `experience.employment_details.current.title` (`(.)`), `experience.employment_details.current.company_name`
 (`in`), `experience.employment_details.description` (`(.)`), `basic_profile.location.full_location`, `crustdata_company_id`.
+Also used, taken from the examples in Crustdata's search docs but not yet exercised live (the account had no credits when it
+was added, 2026-10-27): `years_of_experience_raw` (`=>`, `=<`), a top-level number that is filterable but **not returned** by
+search. It is applied to every query when the brief states a years range, so people outside it are never paid for.
 
 ### Queries HeavyBrains builds (`buildQueries` in `src/lib/discovery/service.ts`)
 

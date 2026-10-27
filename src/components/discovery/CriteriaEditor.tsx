@@ -30,8 +30,12 @@ export function CriteriaEditor() {
         <Field label="Location / remote">
           <input className={inputCls} value={c.location ?? ""} placeholder="Any" onChange={(e) => setCriteria((r) => ({ ...r, location: e.target.value || undefined }))} />
         </Field>
-        <Field label="Min. years (optional)">
-          <input type="number" min={0} max={40} className={inputCls} value={c.minYears ?? ""} onChange={(e) => setCriteria((r) => ({ ...r, minYears: e.target.value ? Number(e.target.value) : undefined }))} />
+        <Field label="Years of experience (optional)">
+          <div className="flex items-center gap-2">
+            <input type="number" min={0} max={60} aria-label="Minimum years of experience" placeholder="Min" className={inputCls} value={c.minYears ?? ""} onChange={(e) => setCriteria((r) => ({ ...r, minYears: e.target.value ? Number(e.target.value) : undefined }))} />
+            <span className="text-xs text-muted">to</span>
+            <input type="number" min={0} max={60} aria-label="Maximum years of experience" placeholder="Max" className={inputCls} value={c.maxYears ?? ""} onChange={(e) => setCriteria((r) => ({ ...r, maxYears: e.target.value ? Number(e.target.value) : undefined }))} />
+          </div>
         </Field>
       </div>
 

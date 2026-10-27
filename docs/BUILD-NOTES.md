@@ -73,7 +73,7 @@ and we would rather ship a verified shortlist than a risky sender.
   every round of changes, which is now part of how we check: unit tests for the guards, a live run for the behaviour.
 
 - **A pasted job posting that is mostly boilerplate** (benefits, equal-opportunity text, fraud warnings). The Analyst now
-  extracts only the role, groups a long tool list into a few criteria, and sets minimum years from "2-4 years".
+  extracts only the role, groups a long tool list into a few criteria, and sets the years range from "2-4 years".
 - **Model-invented evidence.** Handled by verbatim verification; a positive verdict with no verifiable quote is downgraded.
 - **"Why is the Blind-Spot list empty?"** Long postings produce many must-haves, so few people clear "half supported".
   The page now shows where people dropped out, with counts and the closest near-misses. The rule itself is unchanged; that

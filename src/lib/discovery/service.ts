@@ -7,6 +7,7 @@ import { titleQueryTerms } from "./criteria";
 import { dedupeCandidates } from "./ranking";
 import { normalizeName } from "@/lib/utils/text";
 import { analyzePool } from "./analysis";
+import { outsideExperience } from "./experience";
 import { estimatePay, type HistogramFetcher } from "@/lib/pay/estimate";
 import type { RepoContribution } from "@/lib/github/contributions";
 import { analyzeBrief, planSearch, reviewCandidates, writeBriefing, type SearchPlan } from "@/lib/ai/agents";
@@ -61,6 +62,10 @@ export function buildQueries(criteria: RoleCriteria, prefs: RecruiterPreferences
   // Several title variants are alternatives (OR); a single title stays a plain condition.
   const base: Filter[] = [titleFilters.length > 1 ? { op: "or", conditions: titleFilters } : titleFilters[0]];
   if (criteria.location) base.push({ field: "basic_profile.location.full_location", type: "(.)", value: criteria.location });
+  // Years of experience is filterable at the source (a top-level number Crustdata does not return), so people outside
+  // the brief's range are never paid for. `experienceFit` repeats the check on what does come back.
+  if (criteria.minYears != null) base.push({ field: "years_of_experience_raw", type: "=>", value: criteria.minYears });
+  if (criteria.maxYears != null) base.push({ field: "years_of_experience_raw", type: "=<", value: criteria.maxYears });
   const group = (extra: Filter[]): Filter => ({ op: "and", conditions: [...base, ...extra] });
 
   // Evidence query: the title plus employment descriptions mentioning any of the leading criteria.
@@ -220,7 +225,7 @@ async function runCore(req: DiscoveryRequest, emit: (e: ProgressEvent) => void, 
 
     emit({ stage: "Briefing Writer", detail: "Summarising the strongest candidates", agent: true });
     try {
-      const matches = analyzePool(result, criteria, req.preferences);
+      const matches = analyzePool(result, criteria, req.preferences).filter((m) => !outsideExperience(m.experience));
       result.briefing = await writeBriefing(ai.llm, criteria, req.preferences, matches, new Map(result.candidates.map((c) => [c.id, c])));
       agents.push("Briefing Writer");
     } catch (e) {
@@ -292,7 +297,7 @@ export function mergeCandidate(base: Candidate, e: Candidate): Candidate {
 /** Person Enrich and Company Enrich for the top candidates. Supplementary: any failure becomes a warning, never a failed search. */
 async function enrichTop(result: DiscoveryResult, criteria: RoleCriteria, prefs: RecruiterPreferences, emit: (e: ProgressEvent) => void, enrich: EnrichRun) {
   if (result.mode !== "live" || !result.candidates.length) return;
-  const top = analyzePool(result, criteria, prefs).filter((m) => !m.excluded).slice(0, ENRICH_TOP);
+  const top = analyzePool(result, criteria, prefs).filter((m) => !m.excluded && !outsideExperience(m.experience)).slice(0, ENRICH_TOP);
   const ids = new Set(top.map((m) => m.candidateId));
   const targets = result.candidates.filter((c) => ids.has(c.id) && c.profileUrl && /linkedin\.com\/in\//i.test(c.profileUrl));
   if (!targets.length) return;

@@ -10,6 +10,7 @@ import { PreferencesPanel } from "./PreferencesPanel";
 import { RunPanel } from "./RunPanel";
 import { ResultsList } from "./ResultsList";
 import { BriefingCard } from "./BriefingCard";
+import { yearsLabel } from "@/lib/discovery/experience";
 
 const TONE = { must: "accent", nice: "neutral", context: "blind" } as const;
 
@@ -80,6 +81,7 @@ export function DiscoverView() {
           <ul className="flex flex-wrap gap-1.5" aria-label="Criteria used">
             {criteria.criteria.map((c) => <li key={c.id}><Chip tone={TONE[c.tier]}>{c.label}</Chip></li>)}
             {criteria.location && <li><Chip>{criteria.location}</Chip></li>}
+            {yearsLabel(criteria) && <li><Chip title="People outside this range are hidden from the list by default">{yearsLabel(criteria)}</Chip></li>}
           </ul>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
             <label className="flex items-center gap-2">

@@ -21,6 +21,8 @@ export interface RoleCriteria {
   location?: string;
   remote?: boolean;
   minYears?: number;
+  /** Upper bound on years of experience, inclusive. People above it are hidden by default. */
+  maxYears?: number;
   context?: string;
   criteria: Criterion[];
 }
@@ -199,6 +201,10 @@ export interface CriterionAssessment {
   contribution: number;
 }
 
+export type ExperienceFitKind = "fits" | "over" | "under" | "unknown";
+/** How a person's years of experience compare with the brief's range. `reason` is set when they fall outside it. */
+export interface ExperienceFit { fit: ExperienceFitKind; years?: number; reason?: string }
+
 export interface CandidateMatch {
   candidateId: string;
   score: number;
@@ -215,6 +221,8 @@ export interface CandidateMatch {
   /** Technical must-have criteria with supported evidence, and how many exist. Used by the Blind-Spot rules. */
   mustSupported: number;
   mustTotal: number;
+  /** Set by analyzePool. Absent on matches built before experience ranges existed. */
+  experience?: ExperienceFit;
 }
 
 /** Evidence an AI reviewer found that keyword matching missed. The quote is verified verbatim against the profile. */

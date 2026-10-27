@@ -10,6 +10,7 @@ import { budgetFit, convert, rangeLabel, type BudgetFit } from "@/lib/pay/money"
 import { BudgetControl, type BudgetFilter } from "./BudgetControl";
 import { splitList } from "@/lib/utils/text";
 import type { Candidate, CandidateMatch, PoolView, RecruiterPreferences } from "@/types";
+import { outsideExperience } from "@/lib/discovery/experience";
 
 type Sort = "score" | "blend" | "startup" | "pay" | "name" | "company";
 
@@ -25,6 +26,7 @@ export function ResultsList() {
   const [onlyShort, setOnlyShort] = useState(false);
   const [hideDone, setHideDone] = useState(false);
   const [budgetFilter, setBudgetFilter] = useState<BudgetFilter>("any");
+  const hasYearsRange = project?.criteria.minYears != null || project?.criteria.maxYears != null;
 
   const prefs = project?.preferences;
   const pay = project?.result?.pay;
@@ -117,8 +119,11 @@ export function ResultsList() {
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
         <label className="flex items-center gap-1.5"><input type="checkbox" className="accent-[var(--accent)]" checked={onlyShort} onChange={(e) => setOnlyShort(e.target.checked)} />Shortlisted only</label>
         <label className="flex items-center gap-1.5"><input type="checkbox" className="accent-[var(--accent)]" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />Hide already-evaluated / marked not relevant</label>
-        {project.preferences.excludedCompanies.length > 0 && (
-          <label className="flex items-center gap-1.5"><input type="checkbox" className="accent-[var(--accent)]" checked={showExcluded} onChange={(e) => setShowExcluded(e.target.checked)} />Show excluded companies</label>
+        {(project.preferences.excludedCompanies.length > 0 || hasYearsRange) && (
+          <label className="flex items-center gap-1.5">
+            <input type="checkbox" className="accent-[var(--accent)]" checked={showExcluded} onChange={(e) => setShowExcluded(e.target.checked)} />
+            Show {[project.preferences.excludedCompanies.length > 0 && "excluded companies", hasYearsRange && "people outside the experience range"].filter(Boolean).join(" and ")}
+          </label>
         )}
         {rankDelta.size > 0 && <span className="text-accent">Arrows show rank movement from your last criteria change.</span>}
       </div>
@@ -172,6 +177,7 @@ function Row({ i, m, c, selected, shortlisted, delta, feedback, payInfo, onOpen,
           {m.blindSpot && <Chip tone="blind" title={m.discoveryReason}><Compass size={10} aria-hidden />Outside your usual search</Chip>}
           {m.inUsualPool && <Chip>Usual pool</Chip>}
           {m.excluded && <Chip tone="err">Excluded company</Chip>}
+          {outsideExperience(m.experience) && <Chip tone="err" title={m.experience?.reason}>{m.experience?.fit === "over" ? "Over the experience cap" : "Under the minimum experience"}</Chip>}
           {m.alreadyEvaluated && <Chip tone="warn">Already evaluated</Chip>}
           {m.signals.results.some((r) => r.id === "startup_veteran" && r.status === "found") && <Chip tone="accent" title="Spent a year or more at a lean, seed-stage startup">Startup veteran</Chip>}
           {feedback && <Chip tone="accent">{feedback.replace(/_/g, " ")}</Chip>}

@@ -77,6 +77,36 @@ export function makeCriterion(partial: Pick<Criterion, "label" | "kind" | "terms
   };
 }
 
+const YEARS_WORD = "(?:years?|yrs?)";
+const RANGE_RE = new RegExp(String.raw`(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})(?:\s*\([^)]*\))?\s*\+?\s*${YEARS_WORD}`);
+const CAP_RE = new RegExp(String.raw`\b(less than|fewer than|under|below|at most|up to|no more than|max(?:imum)?(?: of)?)\s*(\d{1,2})\s*\)?\s*${YEARS_WORD}`);
+const FLOOR_RE = new RegExp(String.raw`(\d{1,2})\s*\+\s*${YEARS_WORD}|\b(?:at least|minimum(?: of)?|min\.?|more than|over)\s*(\d{1,2})\s*${YEARS_WORD}`);
+const SINGLE_RE = new RegExp(String.raw`(\d{1,2})\s*${YEARS_WORD}`);
+
+/**
+ * Years of experience as a range. "1-2 (less than 3) years" is 1 to 2; "less than 3 years" caps at 2 ("less than"
+ * excludes the number, "up to" includes it); "5+ years" and "at least 5 years" set only a minimum.
+ */
+export function parseYears(text: string): { min?: number; max?: number } {
+  const t = text.toLowerCase();
+  let min: number | undefined, max: number | undefined;
+  const range = RANGE_RE.exec(t);
+  if (range) { min = Number(range[1]); max = Number(range[2]); }
+  const cap = CAP_RE.exec(t);
+  if (cap) {
+    const n = Number(cap[2]) - (/^(less than|fewer than|under|below)$/.test(cap[1]) ? 1 : 0);
+    max = max == null ? n : Math.min(max, n);
+  }
+  const floor = FLOOR_RE.exec(t);
+  if (floor && min == null) min = Number(floor[1] ?? floor[2]);
+  if (min == null && max == null) {
+    const single = SINGLE_RE.exec(t);
+    if (single) min = Number(single[1]);
+  }
+  if (min != null && max != null && max < min) [min, max] = [max, min];
+  return { min, max };
+}
+
 /**
  * Deterministic role-description parser. Produces a *starting point* for editable criteria;
  * the recruiter is expected to review and adjust it.
@@ -117,14 +147,15 @@ export function parseRoleDescription(text: string): RoleCriteria {
 
   const loc = /\b(?:based in|located in|in|near)\s+([A-Z][A-Za-z.]+(?:[ ,]+[A-Z][A-Za-z.]+){0,2})/.exec(clean);
   const remote = /\bremote\b/i.test(clean);
-  const years = /(\d{1,2})\+?\s*(?:years|yrs)/i.exec(clean);
+  const years = parseYears(clean);
 
   return {
     roleTitle,
     seniority: seniorityWord,
     location: loc && !/^(Java|Go|Python|Rust|Kubernetes|Kafka|Postgres)\b/.test(loc[1]) ? loc[1].trim() : undefined,
     remote: remote || undefined,
-    minYears: years ? Number(years[1]) : undefined,
+    minYears: years.min,
+    maxYears: years.max,
     context: undefined,
     criteria,
   };

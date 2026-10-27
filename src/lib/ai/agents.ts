@@ -55,6 +55,7 @@ export const AnalystOut = z.object({
   location: z.string().nullable(),
   remote: z.boolean().nullable(),
   minYears: z.number().nullable(),
+  maxYears: z.number().nullable(),
   context: z.string().nullable(),
   criteria: z.array(z.object({
     label: z.string(),
@@ -78,8 +79,8 @@ Rules:
 - kind: skill (tools, languages), responsibility (work they did), domain (industry), scale (throughput, latency, size).
 - For each non-role criterion give 5 to 12 terms: the concept, its synonyms, abbreviations, and concrete evidence phrases a person would write in a role description ("requests per second", "p99", "sharding"). Lowercase, specific, 1 to 4 words. No generic words like "experience", "team" or "systems" alone.
 - Short or ambiguous tokens that are also common words or letters (Go, C, R, Rust as a word) belong in exactTerms (case-sensitive), not terms.
-- location: the place the person must be based, if stated. remote: true only if the brief says remote is acceptable. minYears: only if a number of years is stated. context: one sentence on the domain, if any.
-- The brief may be a full job posting. Read only what describes the role: responsibilities, required skills and tools, seniority, years of experience, location. Ignore company marketing, benefits, culture, equal-opportunity and legal text, fraud warnings, and hashtags. Education requirements are not criteria. A years range ("2-4 years") sets minYears to its lower bound. A work-arrangement note ("hybrid, 2 days in the office") belongs in context, not location, unless a city or country is named.
+- location: the place the person must be based, if stated. remote: true only if the brief says remote is acceptable. minYears and maxYears: only when the brief states years (rules below). context: one sentence on the domain, if any.
+- The brief may be a full job posting. Read only what describes the role: responsibilities, required skills and tools, seniority, years of experience, location. Ignore company marketing, benefits, culture, equal-opportunity and legal text, fraud warnings, and hashtags. Education requirements are not criteria. A years range ("2-4 years", "1-2 (less than 3) years") sets minYears to its lower bound and maxYears to its upper bound. A cap alone ("less than 3 years", "up to 3 years") sets only maxYears: 2 for "less than 3" (the number is excluded), 3 for "up to 3". "5+ years" or "at least 5 years" sets only minYears. Never set maxYears unless the brief caps experience; principal or staff titles are above any cap under 8 years. A work-arrangement note ("hybrid, 2 days in the office") belongs in context, not location, unless a city or country is named.
 - At most 10 criteria; when the posting lists many tools, group the closely related ones into one criterion with all of them as terms. ${UNTRUSTED}`;
 
 export function sanitizeCriteria(raw: z.infer<typeof AnalystOut>): RoleCriteria {
@@ -101,13 +102,17 @@ export function sanitizeCriteria(raw: z.infer<typeof AnalystOut>): RoleCriteria 
   if (!criteria.some((c) => c.kind === "role")) {
     criteria.unshift({ id: "role", label: `${roleTitle} experience`, tier: "must", importance: "normal", kind: "role", terms: [roleTitle.toLowerCase()] });
   }
-  const years = raw.minYears != null && raw.minYears > 0 && raw.minYears <= 60 ? Math.round(raw.minYears) : undefined;
+  const clampYears = (n: number | null | undefined) => (n != null && n >= 0 && n <= 60 ? Math.round(n) : undefined);
+  let minYears = clampYears(raw.minYears) || undefined; // a minimum of zero is no minimum
+  let maxYears = clampYears(raw.maxYears);
+  if (minYears != null && maxYears != null && maxYears < minYears) [minYears, maxYears] = [maxYears, minYears];
   return {
     roleTitle,
     seniority: raw.seniority?.trim().toLowerCase().slice(0, 40) || undefined,
     location: raw.location?.trim().slice(0, 120) || undefined,
     remote: raw.remote || undefined,
-    minYears: years,
+    minYears,
+    maxYears,
     context: raw.context?.trim().slice(0, 500) || undefined,
     criteria,
   };

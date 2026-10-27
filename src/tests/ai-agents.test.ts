@@ -52,7 +52,7 @@ describe("quoteAppearsIn", () => {
 
 describe("sanitizeCriteria", () => {
   const raw = (criteria: z.infer<typeof AnalystOut>["criteria"]): z.infer<typeof AnalystOut> => ({
-    roleTitle: " Staff Platform Engineer ", seniority: "Staff", location: null, remote: null, minYears: 7.4, context: null, criteria,
+    roleTitle: " Staff Platform Engineer ", seniority: "Staff", location: null, remote: null, minYears: 7.4, maxYears: null, context: null, criteria,
   });
   const c = (label: string, terms: string[], kind: Criterion["kind"] = "skill") =>
     ({ label, tier: "must" as const, importance: "normal" as const, kind, terms, exactTerms: [] });
@@ -73,6 +73,14 @@ describe("sanitizeCriteria", () => {
     expect(out.location!.length).toBeLessThanOrEqual(120);
     expect(out.seniority!.length).toBeLessThanOrEqual(40);
   });
+  it("keeps a years cap, rounds it, orders the bounds and drops values outside the route's limits", () => {
+    expect(sanitizeCriteria({ ...raw([c("Kubernetes", ["kubernetes"])]), minYears: 1, maxYears: 2.4 }).maxYears).toBe(2);
+    const swapped = sanitizeCriteria({ ...raw([c("Kubernetes", ["kubernetes"])]), minYears: 4, maxYears: 2 });
+    expect([swapped.minYears, swapped.maxYears]).toEqual([2, 4]);
+    expect(sanitizeCriteria({ ...raw([c("Kubernetes", ["kubernetes"])]), maxYears: 99 }).maxYears).toBeUndefined();
+    expect(sanitizeCriteria({ ...raw([c("Kubernetes", ["kubernetes"])]), maxYears: null }).maxYears).toBeUndefined();
+  });
+
   it("throws when nothing usable comes back", () => {
     expect(() => sanitizeCriteria(raw([c("Empty", [])]))).toThrow();
   });
@@ -173,7 +181,7 @@ describe("reviewCandidates", () => {
 describe("runDiscovery with AI agents (demo data)", () => {
   const req = { mode: "demo" as const, criteria: role([]), preferences: prefs, limit: 50 };
   const analyst = () => ({
-    roleTitle: "Senior Backend Engineer", seniority: "senior", location: null, remote: null, minYears: null, context: null,
+    roleTitle: "Senior Backend Engineer", seniority: "senior", location: null, remote: null, minYears: null, maxYears: null, context: null,
     criteria: [
       { label: "Backend engineer", tier: "must", importance: "normal", kind: "role", terms: ["backend engineer", "senior backend engineer"], exactTerms: [] },
       { label: "Distributed systems", tier: "must", importance: "high", kind: "responsibility", terms: ["distributed systems", "sharding"], exactTerms: [] },

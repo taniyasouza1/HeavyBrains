@@ -169,7 +169,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Saved content checks join whatever external data the search returned, so they count in each person's Signals score.
     const external = { ...result.external };
     for (const [id, content] of Object.entries(project.contentChecks ?? {})) external[id] = { ...external[id], content };
-    return analyzePool(asOf ? { ...result, candidates: viewCandidates, aiEvidence: undefined, external: undefined } : { ...result, external }, project.criteria, project.preferences);
+    return analyzePool(asOf ? { ...result, candidates: viewCandidates, aiEvidence: undefined, external: undefined } : { ...result, external }, project.criteria, project.preferences, undefined, asOf);
   }, [project?.criteria, project?.preferences, project?.contentChecks, result, asOf, viewCandidates]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track rank movement caused by criteria/preference edits so changed ordering is explainable.

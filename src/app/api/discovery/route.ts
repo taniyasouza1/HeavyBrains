@@ -35,7 +35,7 @@ const BodySchema = z.object({
   reanalyze: z.boolean().default(false),
   criteria: z.object({
     roleTitle: z.string().min(1).max(120), seniority: z.string().max(40).optional(), location: z.string().max(120).optional(),
-    remote: z.boolean().optional(), minYears: z.number().min(0).max(60).optional(), context: z.string().max(2000).optional(),
+    remote: z.boolean().optional(), minYears: z.number().min(0).max(60).optional(), maxYears: z.number().min(0).max(60).optional(), context: z.string().max(2000).optional(),
     criteria: z.array(CriterionSchema).max(25),
   }),
   preferences: z.object({

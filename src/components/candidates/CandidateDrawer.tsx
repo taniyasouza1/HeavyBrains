@@ -174,6 +174,7 @@ function Overview({ c, m, crit, onOpen }: { c: Candidate; m: CandidateMatch; cri
       <section>
         <h3 className="mb-2 text-sm font-semibold text-muted">Why this person appeared</h3>
         <p className="text-[17px] leading-snug">{m.discoveryReason}</p>
+        {m.experience?.reason && <p className="mt-2 text-sm text-warn">{m.experience.reason}</p>}
       </section>
 
       <section>

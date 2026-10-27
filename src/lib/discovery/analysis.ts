@@ -4,6 +4,7 @@ import type {
 } from "@/types";
 import { computeSignals } from "@/lib/signals";
 import { assessCandidate, DEFAULT_SCORING, type ScoringConfig } from "./ranking";
+import { experienceFit, outsideExperience, yearsLabel } from "./experience";
 import { BLIND_SPOT_MIN_SCORE, isAlreadyEvaluated, isBlindSpot, isExcluded, isInUsualPool, pastEmployerInUsualPool } from "./blind-spots";
 
 const dataLimitations = (c: Candidate): string[] => {
@@ -60,6 +61,8 @@ export function analyzePool(
   role: RoleCriteria,
   prefs: RecruiterPreferences,
   config: ScoringConfig = DEFAULT_SCORING,
+  /** Judge years of experience as of this date (as-of replay). Default: today. */
+  asOf?: string,
 ): CandidateMatch[] {
   const aiByCandidate = new Map<string, AiEvidence[]>();
   for (const e of result.aiEvidence ?? []) aiByCandidate.set(e.candidateId, [...(aiByCandidate.get(e.candidateId) ?? []), e]);
@@ -70,11 +73,15 @@ export function analyzePool(
     const inUsualPool = isInUsualPool(c, prefs);
     const blindSpot = isBlindSpot({ candidate: c, prefs, score, supportedMustHaves: supportedMust, totalMustHaves: technicalMust.size });
     const { why, verify, reason } = explain(c, role, assessments, inUsualPool, blindSpot, prefs, supportedMust, technicalMust.size);
+    const experience = experienceFit(c, role, asOf);
+    const limitations = dataLimitations(c);
+    if (experience.fit === "unknown")
+      limitations.push(`Years of experience could not be read from the retrieved profile (no dated roles), so the brief's ${yearsLabel(role)?.toLowerCase()} range was not checked.`);
     return {
       candidateId: c.id, score, assessments, inUsualPool,
       excluded: isExcluded(c, prefs), alreadyEvaluated: isAlreadyEvaluated(c, prefs), blindSpot,
-      whyAppeared: why, needsVerification: verify, discoveryReason: reason, dataLimitations: dataLimitations(c),
-      mustSupported: supportedMust, mustTotal: technicalMust.size,
+      whyAppeared: why, needsVerification: verify, discoveryReason: reason, dataLimitations: limitations,
+      mustSupported: supportedMust, mustTotal: technicalMust.size, experience,
       signals: computeSignals(c, result.companies, prefs, result.external?.[c.id], result.companyFacts),
     };
   });
@@ -84,7 +91,7 @@ export function analyzePool(
 
 /** Explains, with counts, why the Blind-Spot list is the size it is. Mirrors the rules in isBlindSpot. */
 export function diagnoseBlindSpots(matches: CandidateMatch[], prefs: RecruiterPreferences) {
-  const outside = matches.filter((m) => !m.excluded && !m.inUsualPool);
+  const outside = matches.filter((m) => !m.excluded && !outsideExperience(m.experience) && !m.inUsualPool);
   const clearsScore = outside.filter((m) => m.score >= BLIND_SPOT_MIN_SCORE);
   const need = (m: CandidateMatch) => Math.max(1, Math.ceil(m.mustTotal / 2));
   const clearsEvidence = clearsScore.filter((m) => m.mustSupported >= need(m));
@@ -97,10 +104,13 @@ export function diagnoseBlindSpots(matches: CandidateMatch[], prefs: RecruiterPr
   };
 }
 
-/** Applies the recruiter's pool view. Candidates are never duplicated across views — each is filtered from one list. */
+/**
+ * Applies the recruiter's pool view. Candidates are never duplicated across views — each is filtered from one list.
+ * Excluded companies and people outside the brief's experience range are hidden unless `showExcluded`.
+ */
 export function filterByView(matches: CandidateMatch[], view: PoolView, prefs: RecruiterPreferences, showExcluded = false): CandidateMatch[] {
   return matches.filter((m) => {
-    if (m.excluded && !showExcluded) return false;
+    if ((m.excluded || outsideExperience(m.experience)) && !showExcluded) return false;
     if (view === "usual") return m.inUsualPool;
     if (view === "blindspot") return m.blindSpot;
     if (!prefs.includeOutsideUsual && prefs.usualCompanies.length > 0) return m.inUsualPool;
