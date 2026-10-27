@@ -83,7 +83,7 @@ Plain TypeScript runs the agents in order and in parallel. No agent chooses its 
 | **Agents** | Brief Analyst, Search Strategist, Evidence Reviewers (parallel, 5 profiles per call), Briefing Writer, Outreach Writer, Content Reviewer. Model: `claude-opus-5-5` by default. |
 | **Scoring** | Not a model. A deterministic engine in the browser, so changing a criterion re-ranks instantly. |
 | **Guards** | Any quote must appear verbatim in the profile or it is discarded. Briefing and message drafts are checked the same way. |
-| **State** | Projects live in the browser's `localStorage`. The server keeps only a 24-hour result cache. |
+| **State** | Projects live in the browser's `localStorage`. The server keeps only a 24-hour result cache, on disk locally and in the temp dir on Vercel, where it lasts only while a function instance stays warm. |
 | **Stack** | Next.js 16, TypeScript, Tailwind 4, Motion, three.js. |
 
 ![How a score point is earned: only text that can be quoted counts](docs/images/score.png)
