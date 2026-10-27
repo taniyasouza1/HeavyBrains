@@ -57,7 +57,7 @@ export function FieldHero({ field }: { field: Field }) {
 
         <div className="relative px-6 py-8 md:min-h-[660px] md:px-14 md:py-12">
           <div className="flex items-center justify-between gap-6">
-            <Link href="/" className="text-xl font-bold tracking-wide text-white">Heavy Brains</Link>
+            <Link href="/" className="font-display text-xl font-bold tracking-tight text-white">Heavy Brains</Link>
             <nav aria-label="Fields" className="hidden items-center gap-6 text-[15px] text-[#b6bee3] lg:flex lg:pr-[38%]">
               {FIELDS.slice(0, 3).map((f) => <Link key={f.slug} href={`/fields/${f.slug}`} className="transition-colors hover:text-white">{f.name.split(" ")[0]}</Link>)}
               <Link href="/discover" className="transition-colors hover:text-white">Workspace</Link>
@@ -67,7 +67,7 @@ export function FieldHero({ field }: { field: Field }) {
           <div className="mt-14 md:mt-16 md:w-[52%]">
             <motion.h1
               initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
-              className="text-[clamp(2.2rem,4.2vw,3.7rem)] font-medium leading-[1.12] tracking-[-0.01em] text-white text-balance"
+              className="font-display text-[clamp(2.2rem,4.2vw,3.7rem)] font-medium leading-[1.12] tracking-[-0.01em] text-white text-balance"
             >
               {field.headline[0]}<span className="text-[#f2b50f]">{field.headline[1]}</span>{field.headline[2]}
             </motion.h1>

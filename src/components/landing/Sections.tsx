@@ -45,7 +45,7 @@ function Pool({ shape }: { shape: Shape }) {
 function Heading({ children, sub }: { children: React.ReactNode; sub?: string }) {
   return (
     <div className="mx-auto max-w-[1280px] px-4 md:px-10">
-      <h2 className="max-w-3xl text-4xl font-medium leading-[1.1] tracking-[-0.015em] md:text-6xl" style={{ color: INK }}>{children}</h2>
+      <h2 className="font-display max-w-3xl text-4xl font-medium leading-[1.1] tracking-[-0.015em] md:text-6xl" style={{ color: INK }}>{children}</h2>
       {sub && <p className="mt-4 max-w-xl text-lg" style={{ color: "#33407a" }}>{sub}</p>}
     </div>
   );
@@ -159,9 +159,9 @@ export function StackedSteps() {
           <li key={s.title} className="sticky mb-6" style={{ top: `${6 + i * 1.6}rem` }}>
             <motion.div {...reveal} transition={{ duration: 0.7, ease: EASE }}
               className="flex min-h-[15rem] flex-col justify-between rounded-3xl bg-gradient-to-br from-[#323c6c] to-[#222950] p-8 shadow-[0_-20px_50px_-30px_rgba(18,22,58,0.9)] md:flex-row md:items-end md:p-12">
-              <span className="text-7xl font-medium leading-none text-[#f2b50f] md:text-8xl">{i + 1}</span>
+              <span className="font-display text-7xl font-medium leading-none text-[#f2b50f] md:text-8xl">{i + 1}</span>
               <div className="md:max-w-xl">
-                <h3 className="text-3xl font-medium leading-tight md:text-4xl">{s.title}</h3>
+                <h3 className="font-display text-3xl font-medium leading-tight md:text-4xl">{s.title}</h3>
                 <p className="mt-3 text-lg text-[#b6bee3]">{s.body}</p>
               </div>
             </motion.div>
@@ -217,7 +217,7 @@ export function Closing() {
   const words = STATEMENT.split(" ");
   return (
     <section ref={ref} className="mx-auto flex min-h-[90vh] max-w-[1280px] flex-col justify-center px-4 py-28 md:px-10">
-      <p className="max-w-5xl text-5xl font-medium leading-[1.05] tracking-[-0.02em] md:text-7xl" style={{ color: INK }} aria-label={STATEMENT}>
+      <p className="font-display max-w-5xl text-5xl font-medium leading-[1.05] tracking-[-0.02em] md:text-7xl" style={{ color: INK }} aria-label={STATEMENT}>
         {words.map((w, i) => <Word key={i} w={w} p={p} a={(i / words.length) * 0.8} b={(i / words.length) * 0.8 + 0.2} />)}
       </p>
       <div className="mt-12 flex flex-wrap items-center gap-5">
